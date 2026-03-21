@@ -4,7 +4,6 @@ import { eq, and } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { getDb, schema } from "../../db/index.js";
-import { apiKeyAuth } from "../middleware/apiKeyAuth.js";
 import { computeStoragePath } from "../../storage/StorageProvider.js";
 import { getConfig } from "../../config/index.js";
 import type {
@@ -41,7 +40,6 @@ export async function uploadRoutes(
   // POST /api/admin/upload/initiate
   fastify.post<{ Body: unknown; Reply: UploadInitiateResponse | { error: string } }>(
     "/initiate",
-    { preHandler: apiKeyAuth },
     async (request, reply) => {
       if (!storage.supportsPresign()) {
         return reply.status(400).send({ error: "Storage provider does not support presigned uploads" });
@@ -121,7 +119,6 @@ export async function uploadRoutes(
   // POST /api/admin/upload/complete
   fastify.post<{ Body: unknown; Reply: UploadCompleteResponse | { error: string } }>(
     "/complete",
-    { preHandler: apiKeyAuth },
     async (request, reply) => {
       const parsed = CompleteBody.safeParse(request.body);
       if (!parsed.success) {
@@ -203,7 +200,6 @@ export async function uploadRoutes(
   // POST /api/admin/upload/direct
   fastify.post<{ Reply: UploadDirectResponse | { error: string } }>(
     "/direct",
-    { preHandler: apiKeyAuth },
     async (request, reply) => {
       const system = request.system!;
       const db = getDb();

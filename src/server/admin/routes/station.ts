@@ -3,7 +3,6 @@ import type { FastifyInstance } from "fastify";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { getDb, schema } from "../../db/index.js";
-import { apiKeyAuth } from "../middleware/apiKeyAuth.js";
 import type { AdminStationResponse } from "../../../shared/types.js";
 
 const CreateChannelBody = z.object({
@@ -15,7 +14,6 @@ export async function stationRoutes(fastify: FastifyInstance): Promise<void> {
   // GET /api/admin/station — return system info + channels for the authenticated key
   fastify.get<{ Reply: AdminStationResponse }>(
     "/station",
-    { preHandler: apiKeyAuth },
     async (request, reply) => {
       const system = request.system!;
       const db = getDb();
@@ -35,7 +33,6 @@ export async function stationRoutes(fastify: FastifyInstance): Promise<void> {
   // POST /api/admin/channels — find or create a channel by name under the authenticated system
   fastify.post<{ Body: unknown; Reply: { id: string; name: string } | { error: string } }>(
     "/channels",
-    { preHandler: apiKeyAuth },
     async (request, reply) => {
       const parsed = CreateChannelBody.safeParse(request.body);
       if (!parsed.success) {

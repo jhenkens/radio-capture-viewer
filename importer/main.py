@@ -20,6 +20,10 @@ The rtl-airband config file(s) are parsed to map (template, freq_hz) → channel
 label. Labels are matched against channels registered on the server. New channels
 are created automatically when auto_create_channels is enabled.
 
+rtl-airband writes files with a .tmp extension and renames them to the final
+name when recording is complete. The importer listens for rename (move) events
+so files are always fully written before upload.
+
 If delete_after_upload is false, a state file (SQLite) is required to avoid
 re-uploading files on periodic retry scans. It defaults to
 {watch_dir}/.importer-state.db when not explicitly set.
@@ -29,7 +33,6 @@ Usage:
 """
 
 import argparse
-import fcntl
 import glob
 import logging
 import os
@@ -42,7 +45,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
-from watchdog.events import FileSystemEventHandler, FileCreatedEvent
+from watchdog.events import FileSystemEventHandler, FileMovedEvent, FileCreatedEvent
 from watchdog.observers import Observer
 
 from rtl_parser import ChannelEntry, build_lookup, parse_rtl_configs
@@ -69,11 +72,6 @@ FILENAME_NO_FREQ = re.compile(
 
 # Warn if filename timestamp and mtime differ by more than this
 MTIME_DRIFT_WARN_S = 300
-
-# Poll until file size is stable before importing (avoids reading open/locked files)
-SETTLE_POLL_S = 0.5        # interval between size checks
-SETTLE_STABLE_POLLS = 2    # consecutive equal-size polls required to consider file stable
-SETTLE_TIMEOUT_S = 60.0    # give up after this long
 
 # ---------------------------------------------------------------------------
 # Filename parsing
@@ -108,6 +106,11 @@ def match_filename(
     return None
 
 
+def is_audio_filename(filename: str) -> bool:
+    """Return True if the filename matches either rtl-airband naming pattern."""
+    return bool(FILENAME_WITH_FREQ.match(filename) or FILENAME_NO_FREQ.match(filename))
+
+
 def validate_mtime(filepath: str, recorded_at_ms: int) -> None:
     """Log a warning if the file mtime deviates significantly from the filename timestamp."""
     try:
@@ -122,53 +125,6 @@ def validate_mtime(filepath: str, recorded_at_ms: int) -> None:
         pass
 
 
-def _can_lock_exclusive(filepath: str) -> bool:
-    """
-    Try to acquire an exclusive (write) lock on the file without blocking.
-    Returns True if no other process holds a write lock, False otherwise.
-    Uses fcntl.flock — advisory only, but rtl-airband honours it on Linux/macOS.
-    Falls back to True on platforms that don't support fcntl.
-    """
-    try:
-        with open(filepath, "rb") as f:
-            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            fcntl.flock(f, fcntl.LOCK_UN)
-        return True
-    except OSError:
-        return False
-    except AttributeError:
-        # fcntl not available (Windows)
-        return True
-
-
-def wait_for_file_stable(filepath: str) -> bool:
-    """
-    Poll until the file size has been stable for SETTLE_STABLE_POLLS consecutive reads
-    AND an exclusive lock can be acquired (writer has closed the file).
-    Returns True when stable, False if the file disappears or the timeout expires.
-    """
-    deadline = time.time() + SETTLE_TIMEOUT_S
-    prev_size = -1
-    stable_count = 0
-    while time.time() < deadline:
-        try:
-            size = os.path.getsize(filepath)
-        except OSError:
-            return False
-        if size > 0 and size == prev_size:
-            stable_count += 1
-            if stable_count >= SETTLE_STABLE_POLLS:
-                if _can_lock_exclusive(filepath):
-                    return True
-                # Size stable but still locked — reset and keep polling
-                stable_count = 0
-        else:
-            stable_count = 0
-        prev_size = size
-        time.sleep(SETTLE_POLL_S)
-    return False
-
-
 # ---------------------------------------------------------------------------
 # Work queue — thread-pool based, deduplicates in-flight entries
 # ---------------------------------------------------------------------------
@@ -178,8 +134,7 @@ class WorkQueue:
     Thread-safe work queue backed by a ThreadPoolExecutor.
 
     Files are deduplicated: a filepath already in-flight will not be submitted
-    a second time. Each file is processed concurrently so a long-running
-    wait_for_file_stable call on one file does not block others.
+    a second time. Each file is processed concurrently.
     """
 
     def __init__(self, process_fn: "Callable[[str], None]", max_workers: int = 4):  # type: ignore[name-defined]
@@ -221,7 +176,7 @@ class WorkQueue:
 class FileProcessor:
     """
     Resolves a filepath to a channel and uploads it. Intended to be called
-    from a single worker thread via WorkQueue.
+    from a worker thread via WorkQueue.
     """
 
     def __init__(
@@ -253,12 +208,6 @@ class FileProcessor:
             return
 
         entry, recorded_at = result
-
-        # Wait until the file is fully written (size stable) before importing.
-        # This prevents importing files that are still open/locked by rtl-airband.
-        if not wait_for_file_stable(filepath):
-            logger.warning("File still open or timed out waiting for stability, skipping: %s", filename)
-            return
 
         if not os.path.exists(filepath):
             logger.debug("File disappeared before upload: %s", filename)
@@ -310,11 +259,21 @@ class FileProcessor:
 # ---------------------------------------------------------------------------
 
 class AudioFileHandler(FileSystemEventHandler):
+    """
+    Listens for move and create events.
+    rtl-airband renames .tmp → final file (on_moved), but on_created
+    is also handled for writers that create files directly.
+    """
+
     def __init__(self, work_queue: WorkQueue):
         self.work_queue = work_queue
 
+    def on_moved(self, event: FileMovedEvent) -> None:  # type: ignore[override]
+        if not event.is_directory and is_audio_filename(os.path.basename(event.dest_path)):
+            self.work_queue.enqueue(event.dest_path)
+
     def on_created(self, event: FileCreatedEvent) -> None:  # type: ignore[override]
-        if not event.is_directory:
+        if not event.is_directory and is_audio_filename(os.path.basename(event.src_path)):
             self.work_queue.enqueue(event.src_path)
 
 
