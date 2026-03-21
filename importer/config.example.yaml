@@ -1,0 +1,37 @@
+# Radio Capture Importer Configuration
+
+server_url: "http://localhost:3000"
+api_key: "your-api-key-here"
+
+# Path to one rtl-airband config file
+rtl_config: "/path/to/rtlsdr-airband.conf"
+
+# Or specify multiple config files (e.g. one per SDR dongle)
+# rtl_configs:
+#   - "/path/to/rtlsdr-airband-461mhz.conf"
+#   - "/path/to/rtlsdr-airband-464mhz.conf"
+
+# Directory to watch for new audio files
+watch_dir: "/path/to/recordings"
+
+# Delete local files after a successful upload.
+# If false, a state file is required to track which files have already been
+# uploaded so they are not re-sent on retry scans. Defaults to
+# {watch_dir}/.importer-state.db when not set explicitly.
+delete_after_upload: false
+# state_file: "/path/to/importer-state.db"
+
+# Automatically create channels that exist in the rtl config but not on the server
+auto_create_channels: true
+
+# Upload method:
+#   false — multipart direct upload (works with local storage, recommended for local dev)
+#   true  — presigned S3/R2 URL flow (requires S3 storage configured on the server)
+use_presign: false
+
+# Retry settings — periodically scan watch_dir for older files that may have been missed
+retry_interval_minutes: 5
+max_age_hours: 24
+
+# Logging level: DEBUG, INFO, WARNING, ERROR
+log_level: "INFO"

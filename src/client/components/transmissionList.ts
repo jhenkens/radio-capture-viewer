@@ -1,0 +1,200 @@
+import type { TransmissionDTO } from "../../shared/types";
+
+export interface TransmissionListData {
+  transmissions: TransmissionDTO[];
+  localDb: Record<string, TransmissionDTO>;
+  loading: boolean;
+  loadingMore: boolean;
+  error: string | null;
+  hasMore: boolean;
+  cursor: number | null;
+  systemId: string | null;
+  channelIds: string[];
+  searchQuery: string;
+  playingId: string | null;
+  lastScrollTime: number;
+  autoplayPendingAfterId: string | null;
+  currentQueryId: string | null;
+  currentMoreQueryId: string | null;
+
+  init(): void;
+  load(systemId: string, channelIds?: string[]): void;
+  loadMore(): void;
+  search(query: string): void;
+  handleQueryResult(result: { query_id: string; items: TransmissionDTO[]; next_cursor: number | null }): void;
+  addTransmission(tx: TransmissionDTO): void;
+  handleAutoplayNext(id: string): void;
+  scrollToPlaying(): void;
+  formatTime(ts: number): string;
+  formatDuration(ms: number | null): string;
+  _matchesFilters(tx: TransmissionDTO): boolean;
+  _mergeAndRebuild(items: TransmissionDTO[]): void;
+}
+
+export function transmissionList(): TransmissionListData {
+  return {
+    transmissions: [],
+    localDb: {},
+    loading: false,
+    loadingMore: false,
+    error: null,
+    hasMore: false,
+    cursor: null,
+    systemId: null,
+    channelIds: [],
+    searchQuery: "",
+    playingId: null,
+    lastScrollTime: 0,
+    autoplayPendingAfterId: null,
+    currentQueryId: null,
+    currentMoreQueryId: null,
+
+    init() {
+      this.lastScrollTime = 0;
+      setInterval(() => {
+        if (!this.playingId) return;
+        if (Date.now() - this.lastScrollTime < 15_000) return;
+        this.scrollToPlaying();
+      }, 2_000);
+
+      // Infinite scroll: auto-loadMore when sentinel enters viewport
+      const sentinel = document.getElementById("tx-list-sentinel");
+      if (sentinel && "IntersectionObserver" in window) {
+        const observer = new IntersectionObserver(
+          (entries) => {
+            if (entries[0]?.isIntersecting) this.loadMore();
+          },
+          { rootMargin: "200px" }
+        );
+        observer.observe(sentinel);
+      }
+    },
+
+    load(systemId: string, channelIds: string[] = []) {
+      this.systemId = systemId;
+      this.channelIds = channelIds;
+      this.localDb = {};
+      this.transmissions = [];
+      this.cursor = null;
+      this.hasMore = false;
+      this.currentMoreQueryId = null;
+      this.error = null;
+
+      if (!channelIds.length) {
+        return;
+      }
+
+      this.loading = true;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const queryId = (this as any).$store.app.queryTransmissions({
+        system_id: systemId,
+        channel_ids: channelIds,
+        search: this.searchQuery || undefined,
+        limit: 50,
+      }) as string | null;
+      this.currentQueryId = queryId;
+    },
+
+    loadMore() {
+      if (!this.systemId || !this.hasMore || this.loadingMore || this.loading) return;
+      this.loadingMore = true;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const queryId = (this as any).$store.app.queryTransmissions({
+        system_id: this.systemId,
+        channel_ids: this.channelIds.length ? this.channelIds : undefined,
+        search: this.searchQuery || undefined,
+        cursor: this.cursor ?? undefined,
+        limit: 50,
+      }) as string | null;
+      this.currentMoreQueryId = queryId;
+    },
+
+    search(query: string) {
+      this.searchQuery = query;
+      if (this.systemId) {
+        this.load(this.systemId, this.channelIds);
+      }
+    },
+
+    handleQueryResult(result: { query_id: string; items: TransmissionDTO[]; next_cursor: number | null }) {
+      if (result.query_id === this.currentQueryId) {
+        this._mergeAndRebuild(result.items);
+        this.cursor = result.next_cursor;
+        this.hasMore = result.next_cursor !== null;
+        this.loading = false;
+        this.currentQueryId = null;
+      } else if (result.query_id === this.currentMoreQueryId) {
+        this._mergeAndRebuild(result.items);
+        this.cursor = result.next_cursor;
+        this.hasMore = result.next_cursor !== null;
+        this.loadingMore = false;
+        this.currentMoreQueryId = null;
+      }
+    },
+
+    addTransmission(tx: TransmissionDTO) {
+      if (!this._matchesFilters(tx)) return;
+      this._mergeAndRebuild([tx]);
+      if (this.autoplayPendingAfterId !== null) {
+        const id = this.autoplayPendingAfterId;
+        this.autoplayPendingAfterId = null;
+        this.handleAutoplayNext(id);
+      }
+    },
+
+    handleAutoplayNext(id: string) {
+      const idx = this.transmissions.findIndex((tx) => tx.id === id);
+      if (idx > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (this as any).$dispatch("play-transmission", this.transmissions[idx - 1]!);
+      } else if (idx === 0) {
+        this.autoplayPendingAfterId = id;
+      }
+    },
+
+    _matchesFilters(tx: TransmissionDTO): boolean {
+      if (this.systemId && tx.system_id !== this.systemId) return false;
+      if (this.channelIds.length > 0 && !this.channelIds.includes(tx.channel_id)) return false;
+      if (this.searchQuery) {
+        const q = this.searchQuery.toLowerCase();
+        if (!(tx.transcript?.toLowerCase().includes(q) ?? false)) return false;
+      }
+      return true;
+    },
+
+    _mergeAndRebuild(items: TransmissionDTO[]) {
+      for (const tx of items) {
+        this.localDb[tx.id] = tx;
+      }
+      this.transmissions = Object.values(this.localDb).sort(
+        (a, b) => b.recorded_at - a.recorded_at
+      );
+    },
+
+    scrollToPlaying() {
+      if (!this.playingId) return;
+      const el = document.querySelector(`[data-tx-id="${this.playingId}"]`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    },
+
+    formatTime(ts: number): string {
+      return new Date(ts).toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        timeZoneName: "short",
+      });
+    },
+
+    formatDuration(ms: number | null): string {
+      if (ms == null) return "";
+      const s = Math.ceil(ms / 1000);
+      const m = Math.floor(s / 60);
+      const sec = s % 60;
+      if (m > 0) return `${m}m:${sec}s`;
+      return `${s}s`;
+    },
+  };
+}

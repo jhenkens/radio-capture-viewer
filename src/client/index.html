@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Radio Capture Viewer</title>
+  <!-- Webpack injects bundle and styles here -->
+</head>
+<body class="h-full flex flex-col">
+
+  <!-- Top nav -->
+  <header class="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center gap-4">
+    <h1 class="text-green-400 font-bold tracking-widest uppercase text-lg">Radio Capture Viewer</h1>
+    <span
+      class="ml-auto text-xs"
+      :class="$store.app.wsConnected ? 'text-green-400' : 'text-yellow-400'"
+      x-text="$store.app.wsConnected ? 'LIVE' : 'connecting…'"
+    ></span>
+  </header>
+
+  <div class="flex flex-1 overflow-hidden">
+
+    <!-- Sidebar -->
+    <aside class="w-64 bg-gray-900 border-r border-gray-800 flex flex-col overflow-y-auto p-4 gap-6">
+
+      <!-- System selector -->
+      <div x-data="systemSelector" x-init="init()">
+        <h2 class="text-xs text-gray-500 uppercase tracking-wider mb-2">System</h2>
+        <div x-show="loading" class="text-gray-500 text-xs">Loading…</div>
+        <div x-show="error" class="text-red-400 text-xs" x-text="error"></div>
+        <div class="flex flex-col gap-1">
+          <template x-for="sys in systems" :key="sys.id">
+            <button
+              @click="selectSystem(sys.id)"
+              :class="selectedSystemId === sys.id
+                ? 'bg-green-800 text-green-100'
+                : 'text-gray-300 hover:bg-gray-800'"
+              class="text-left px-2 py-1 rounded text-sm transition-colors"
+              x-text="sys.name"
+            ></button>
+          </template>
+        </div>
+      </div>
+
+      <!-- Channel selector -->
+      <div
+        x-data="channelSelector"
+        @system-selected.window="$store.app.systemId = $event.detail.id; $store.app.systemName = $event.detail.name; $store.app.channelMap = {}; loadChannels($event.detail.id)"
+        @channels-loaded.window="$store.app.channelMap = Object.fromEntries($event.detail.channels.map(c => [c.id, c.name]))"
+        @channels-changed="$store.app.subscribe($store.app.systemId, $event.detail.ids)"
+      >
+        <h2 class="text-xs text-gray-500 uppercase tracking-wider mb-2">Channels</h2>
+        <div x-show="loading" class="text-gray-500 text-xs">Loading…</div>
+        <div x-show="!loading && channels.length === 0" class="text-gray-600 text-xs">No channels</div>
+        <div class="flex flex-col gap-1">
+          <template x-for="ch in channels" :key="ch.id">
+            <button
+              @click="$event.metaKey || $event.ctrlKey ? toggleChannel(ch.id) : selectOnly(ch.id)"
+              :class="isSelected(ch.id)
+                ? 'bg-blue-800 text-blue-100'
+                : 'text-gray-300 hover:bg-gray-800'"
+              class="text-left px-2 py-1 rounded text-sm transition-colors"
+              x-text="ch.name"
+            ></button>
+          </template>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- Main content -->
+    <main class="flex-1 flex flex-col overflow-hidden">
+
+      <!-- Search bar + transmission list -->
+      <div
+        x-data="transmissionList"
+        x-init="init()"
+        @channels-changed.window="if ($store.app.systemId) load($store.app.systemId, $event.detail.ids)"
+        @ws:transmission-available.document="addTransmission($event.detail)"
+        @ws:query-result.document="handleQueryResult($event.detail)"
+        @playing-changed.window="playingId = $event.detail.id"
+        @request-next-transmission.window="handleAutoplayNext($event.detail.id)"
+        class="flex-1 flex flex-col overflow-hidden"
+      >
+        <!-- Search -->
+        <div class="px-4 py-2 border-b border-gray-800 bg-gray-900">
+          <input
+            type="text"
+            placeholder="Search transcripts…"
+            @input.debounce.500ms="search($event.target.value)"
+            class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-green-500"
+          />
+        </div>
+
+        <!-- List -->
+        <div
+          class="flex-1 overflow-y-auto pb-16"
+          @scroll.passive="lastScrollTime = Date.now()"
+        >
+          <div x-show="loading && transmissions.length === 0" class="p-4 text-gray-500 text-xs">
+            Loading…
+          </div>
+          <div x-show="error" class="p-4 text-red-400 text-xs" x-text="error"></div>
+          <div x-show="!loading && transmissions.length === 0 && !error" class="p-4 text-gray-600 text-xs">
+            No transmissions found. Select a system to begin.
+          </div>
+
+          <div class="divide-y divide-gray-800">
+            <template x-for="tx in transmissions" :key="tx.id">
+              <div
+                class="px-4 py-3 transition-colors group border-b border-gray-800/50"
+                :class="playingId === tx.id ? 'bg-green-900/25 border-l-2 border-l-green-500' : 'hover:bg-gray-900'"
+                :data-tx-id="tx.id"
+              >
+                <div class="flex items-center justify-between gap-2">
+                  <div class="flex items-center gap-1.5 text-xs min-w-0 flex-1 overflow-hidden">
+                    <span class="text-green-400 font-medium shrink-0" x-text="$store.app.systemName"></span>
+                    <span class="text-gray-600 shrink-0">·</span>
+                    <span class="text-blue-400 shrink-0" x-text="$store.app.channelMap[tx.channel_id] ?? '?'"></span>
+                    <span class="text-gray-600 shrink-0">·</span>
+                    <span class="text-gray-400 truncate" x-text="formatTime(tx.recorded_at)"></span>
+                  </div>
+                  <div class="flex items-center gap-1.5 shrink-0">
+                    <span class="text-gray-500 text-xs font-mono" x-text="formatDuration(tx.duration_ms)"></span>
+                    <button
+                      class="text-gray-600 group-hover:text-green-400 text-xs w-6 h-6 flex items-center justify-center rounded hover:bg-gray-800 transition-colors"
+                      :class="playingId === tx.id ? 'text-green-400' : ''"
+                      @click="$dispatch('play-transmission', tx)"
+                    >▶</button>
+                  </div>
+                </div>
+                <div
+                  x-show="tx.transcript"
+                  class="mt-1 text-gray-300 text-xs leading-relaxed line-clamp-2"
+                  x-text="tx.transcript"
+                ></div>
+                <div
+                  x-show="!tx.transcript"
+                  class="mt-1 text-gray-600 text-xs italic"
+                >No transcript</div>
+              </div>
+            </template>
+          </div>
+
+          <!-- Infinite scroll sentinel (observed by IntersectionObserver) -->
+          <div id="tx-list-sentinel" x-show="hasMore" class="h-1"></div>
+
+          <!-- Load more fallback button (shown only while loading more) -->
+          <div x-show="hasMore" class="p-4">
+            <button
+              @click="loadMore()"
+              :disabled="loadingMore"
+              class="w-full py-2 bg-gray-800 hover:bg-gray-700 text-gray-400 text-xs rounded transition-colors disabled:opacity-50"
+            >
+              <span x-show="!loadingMore">Load more</span>
+              <span x-show="loadingMore">Loading…</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <!-- Floating audio player bar -->
+  <div
+    x-data="audioPlayer"
+    x-init="init()"
+    @ws:transmission-available.document="if (autoplay) enqueue($event.detail)"
+    @autoplay-changed="$store.app.setAutoplay($event.detail.enabled, $event.detail.last_played_id)"
+    @play-transmission.window="play($event.detail)"
+    class="fixed bottom-0 inset-x-0 bg-gray-900 border-t border-gray-700 z-50"
+  >
+    <!-- Progress bar -->
+    <div class="h-0.5 bg-gray-800 w-full">
+      <div
+        class="h-full bg-green-500 transition-none"
+        :style="'width: ' + (audioDuration > 0 ? (currentTime / audioDuration * 100).toFixed(2) : 0) + '%'"
+      ></div>
+    </div>
+
+    <!-- Controls -->
+    <div class="px-4 py-2 flex items-center gap-4">
+      <!-- Info -->
+      <div class="flex-1 min-w-0">
+        <div x-show="!currentTransmission" class="text-gray-600 text-xs">No audio playing</div>
+        <div x-show="currentTransmission" class="text-xs truncate">
+          <span class="text-green-400" x-text="currentTransmission ? ($store.app.channelMap[currentTransmission.channel_id] ?? '?') : ''"></span>
+          <span class="text-gray-600 mx-1">·</span>
+          <span class="text-gray-400" x-text="currentTransmission ? new Date(currentTransmission.recorded_at).toLocaleString() : ''"></span>
+        </div>
+      </div>
+
+      <!-- Time -->
+      <span
+        x-show="audioDuration > 0"
+        class="text-gray-500 text-xs font-mono shrink-0"
+        x-text="formatProgress(currentTime) + ' / ' + formatProgress(audioDuration)"
+      ></span>
+
+      <!-- Autoplay toggle -->
+      <button
+        @click="toggleAutoplay()"
+        :class="autoplay ? 'bg-green-700 text-white' : 'bg-gray-700 text-gray-300'"
+        class="px-3 py-1 rounded text-xs font-semibold transition-colors shrink-0"
+        x-text="autoplay ? 'Autoplay ON' : 'Autoplay OFF'"
+      ></button>
+
+      <!-- Stop -->
+      <button
+        @click="stop()"
+        x-show="playing"
+        class="px-3 py-1 rounded text-xs bg-red-800 text-red-100 hover:bg-red-700 transition-colors shrink-0"
+      >Stop</button>
+    </div>
+  </div>
+
+</body>
+</html>

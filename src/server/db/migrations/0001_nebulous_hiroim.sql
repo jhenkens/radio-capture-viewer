@@ -1,0 +1,1 @@
+ALTER TABLE `transmissions` ADD `frequency_hz` integer;

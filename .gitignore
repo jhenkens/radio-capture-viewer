@@ -1,0 +1,14 @@
+node_modules/
+dist/
+data/
+*.db
+*.db-shm
+*.db-wal
+.env
+config.json
+radio-capture-viewer.config*.json
+*.config.local.*
+.claude
+__pycache__/
+Claude.md
+.claude

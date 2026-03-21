@@ -1,0 +1,1 @@
+ALTER TABLE `tasks` ADD `retry_after` integer;
