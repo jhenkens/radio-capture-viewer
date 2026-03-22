@@ -34,7 +34,7 @@ interface AppStore {
 
   init(): void;
   subscribe(systemId: string, channelIds: string[]): void;
-  queryTransmissions(params: { system_id: string; channel_ids?: string[]; search?: string; before?: number; cursor?: number; limit?: number }): string | null;
+  queryTransmissions(params: { system_id: string; channel_ids?: string[]; search?: string; after?: number; before?: number; cursor?: number; limit?: number }): string | null;
   onQueryResult(fn: QueryResultHandler): void;
   addTransmission(tx: TransmissionDTO): void;
   mergeTransmissions(items: TransmissionDTO[]): void;

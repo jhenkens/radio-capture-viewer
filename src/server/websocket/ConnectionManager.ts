@@ -1,5 +1,5 @@
 import type WebSocket from "ws";
-import { eq, and, lt, inArray, like, desc } from "drizzle-orm";
+import { eq, and, lt, gte, inArray, like, desc } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import type { DB } from "../db/index.js";
 import type { NotificationService, TransmissionAvailableEvent } from "../notifications/NotificationService.js";
@@ -79,9 +79,9 @@ export class ConnectionManager {
 
   async handleQuery(
     ws: WebSocket,
-    msg: { query_id: string; system_id: string; channel_ids?: string[]; search?: string; before?: number; cursor?: number; limit?: number }
+    msg: { query_id: string; system_id: string; channel_ids?: string[]; search?: string; after?: number; before?: number; cursor?: number; limit?: number }
   ): Promise<void> {
-    const { query_id, system_id, channel_ids, search, before, cursor, limit: lim } = msg;
+    const { query_id, system_id, channel_ids, search, after, before, cursor, limit: lim } = msg;
     const limit = Math.min(lim ?? 50, 200);
 
     const conditions = [
@@ -94,6 +94,9 @@ export class ConnectionManager {
     }
     if (search) {
       conditions.push(like(schema.transmissions.transcript, `%${search}%`));
+    }
+    if (after !== undefined) {
+      conditions.push(gte(schema.transmissions.recorded_at, after));
     }
     if (before !== undefined) {
       conditions.push(lt(schema.transmissions.recorded_at, before));

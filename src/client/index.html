@@ -107,21 +107,34 @@
         @channels-changed.window="if ($store.app.systemId) load($store.app.systemId, $event.detail.ids)"
         class="flex-1 flex flex-col overflow-hidden"
       >
-        <!-- Search + date filter -->
+        <!-- Search + date/time range filter -->
         <div class="px-4 py-2 border-b border-gray-800 bg-gray-900 flex flex-wrap gap-2">
           <input
             type="text"
             placeholder="Search transcripts…"
             @input.debounce.500ms="search($event.target.value)"
-            class="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-green-500"
+            class="flex-1 min-w-48 bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-green-500"
           />
-          <input
-            type="date"
-            :value="selectedDate"
-            @change="onDateChange($event.target.value)"
-            class="w-full sm:w-auto bg-gray-800 border rounded px-3 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-green-500 [color-scheme:dark]"
-            :class="selectedDate ? 'border-yellow-500' : 'border-gray-700'"
-          />
+          <div class="flex items-center gap-1.5 w-full sm:w-auto">
+            <span class="text-gray-500 text-xs shrink-0">From</span>
+            <input
+              type="datetime-local"
+              :value="startValue"
+              @change="onStartChange($event.target.value)"
+              class="flex-1 sm:flex-none bg-gray-800 border rounded px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-green-500 [color-scheme:dark]"
+              :class="startValue ? 'border-yellow-500' : 'border-gray-700'"
+            />
+          </div>
+          <div class="flex items-center gap-1.5 w-full sm:w-auto">
+            <span class="text-gray-500 text-xs shrink-0">To</span>
+            <input
+              type="datetime-local"
+              :value="endValue"
+              @change="onEndChange($event.target.value)"
+              class="flex-1 sm:flex-none bg-gray-800 border rounded px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-green-500 [color-scheme:dark]"
+              :class="endValue ? 'border-yellow-500' : 'border-gray-700'"
+            />
+          </div>
         </div>
 
         <!-- List -->

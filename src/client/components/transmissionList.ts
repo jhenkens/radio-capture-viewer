@@ -9,8 +9,8 @@ export interface TransmissionListData {
   systemId: string | null;
   channelIds: string[];
   searchQuery: string;
-  selectedDate: string;
-  beforeTs: number | null;
+  startValue: string;
+  endValue: string;
   lastScrollTime: number;
   currentQueryId: string | null;
   currentMoreQueryId: string | null;
@@ -19,7 +19,8 @@ export interface TransmissionListData {
   load(systemId: string, channelIds?: string[]): void;
   loadMore(): void;
   search(query: string): void;
-  onDateChange(value: string): void;
+  onStartChange(value: string): void;
+  onEndChange(value: string): void;
   handleQueryResult(result: { query_id: string; items: TransmissionDTO[]; next_cursor: number | null }): void;
   scrollToPlaying(): void;
   formatTime(ts: number): string;
@@ -36,8 +37,8 @@ export function transmissionList(): TransmissionListData {
     systemId: null,
     channelIds: [],
     searchQuery: "",
-    selectedDate: "",
-    beforeTs: null,
+    startValue: "",
+    endValue: "",
     lastScrollTime: 0,
     currentQueryId: null,
     currentMoreQueryId: null,
@@ -84,7 +85,8 @@ export function transmissionList(): TransmissionListData {
         system_id: systemId,
         channel_ids: channelIds,
         search: this.searchQuery || undefined,
-        before: this.beforeTs ?? undefined,
+        after: this.startValue ? new Date(this.startValue).getTime() : undefined,
+        before: this.endValue ? new Date(this.endValue).getTime() : undefined,
         limit: 50,
       }) as string | null;
       this.currentQueryId = queryId;
@@ -98,7 +100,8 @@ export function transmissionList(): TransmissionListData {
         system_id: this.systemId,
         channel_ids: this.channelIds.length ? this.channelIds : undefined,
         search: this.searchQuery || undefined,
-        before: this.beforeTs ?? undefined,
+        after: this.startValue ? new Date(this.startValue).getTime() : undefined,
+        before: this.endValue ? new Date(this.endValue).getTime() : undefined,
         cursor: this.cursor ?? undefined,
         limit: 50,
       }) as string | null;
@@ -110,19 +113,17 @@ export function transmissionList(): TransmissionListData {
       if (this.systemId) this.load(this.systemId, this.channelIds);
     },
 
-    onDateChange(value: string) {
-      this.selectedDate = value;
-      if (value) {
-        // Compute start of the next day in local time (exclusive upper bound)
-        const [year, month, day] = value.split("-").map(Number);
-        this.beforeTs = new Date(year!, month! - 1, day! + 1).getTime();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (this as any).$store.app.setLiveMode(false);
-      } else {
-        this.beforeTs = null;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (this as any).$store.app.setLiveMode(true);
-      }
+    onStartChange(value: string) {
+      this.startValue = value;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (this as any).$store.app.setLiveMode(!this.startValue && !this.endValue);
+      if (this.systemId) this.load(this.systemId, this.channelIds);
+    },
+
+    onEndChange(value: string) {
+      this.endValue = value;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (this as any).$store.app.setLiveMode(!this.startValue && !this.endValue);
       if (this.systemId) this.load(this.systemId, this.channelIds);
     },
 

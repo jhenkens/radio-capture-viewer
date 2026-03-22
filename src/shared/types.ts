@@ -37,7 +37,7 @@ export type ServerWSMessage =
 
 export type ClientWSMessage =
   | { type: "subscribe"; system_id: string; channel_ids?: string[] }
-  | { type: "query"; query_id: string; system_id: string; channel_ids?: string[]; search?: string; before?: number; cursor?: number; limit?: number };
+  | { type: "query"; query_id: string; system_id: string; channel_ids?: string[]; search?: string; after?: number; before?: number; cursor?: number; limit?: number };
 
 // API response shapes
 
