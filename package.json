@@ -14,6 +14,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "seed": "tsx src/server/scripts/seed.ts",
+    "stats": "tsx src/server/scripts/stats.ts",
     "lint": "tsc --noEmit",
     "docker:build": "docker build -t radio-capture-viewer:latest . && docker build -t radio-capture-viewer:importer-latest ./importer"
   },
