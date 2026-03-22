@@ -8,9 +8,6 @@ export interface TransmissionListData {
   cursor: number | null;
   systemId: string | null;
   channelIds: string[];
-  searchQuery: string;
-  startValue: string;
-  endValue: string;
   lastScrollTime: number;
   currentQueryId: string | null;
   currentMoreQueryId: string | null;
@@ -18,9 +15,6 @@ export interface TransmissionListData {
   init(): void;
   load(systemId: string, channelIds?: string[]): void;
   loadMore(): void;
-  search(query: string): void;
-  onStartChange(value: string): void;
-  onEndChange(value: string): void;
   onReset(): void;
   handleQueryResult(result: { query_id: string; items: TransmissionDTO[]; next_cursor: number | null }): void;
   scrollToPlaying(): void;
@@ -37,9 +31,6 @@ export function transmissionList(): TransmissionListData {
     cursor: null,
     systemId: null,
     channelIds: [],
-    searchQuery: "",
-    startValue: "",
-    endValue: "",
     lastScrollTime: 0,
     currentQueryId: null,
     currentMoreQueryId: null,
@@ -82,12 +73,14 @@ export function transmissionList(): TransmissionListData {
 
       this.loading = true;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const queryId = (this as any).$store.app.queryTransmissions({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const store = (this as any).$store.app;
+      const queryId = store.queryTransmissions({
         system_id: systemId,
         channel_ids: channelIds,
-        search: this.searchQuery || undefined,
-        after: this.startValue ? new Date(this.startValue).getTime() : undefined,
-        before: this.endValue ? new Date(this.endValue).getTime() : undefined,
+        search: store.filterSearch || undefined,
+        after: store.filterStart ? new Date(store.filterStart).getTime() : undefined,
+        before: store.filterEnd ? new Date(store.filterEnd).getTime() : undefined,
         limit: 50,
       }) as string | null;
       this.currentQueryId = queryId;
@@ -97,42 +90,27 @@ export function transmissionList(): TransmissionListData {
       if (!this.systemId || !this.hasMore || this.loadingMore || this.loading) return;
       this.loadingMore = true;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const queryId = (this as any).$store.app.queryTransmissions({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const store = (this as any).$store.app;
+      const queryId = store.queryTransmissions({
         system_id: this.systemId,
         channel_ids: this.channelIds.length ? this.channelIds : undefined,
-        search: this.searchQuery || undefined,
-        after: this.startValue ? new Date(this.startValue).getTime() : undefined,
-        before: this.endValue ? new Date(this.endValue).getTime() : undefined,
+        search: store.filterSearch || undefined,
+        after: store.filterStart ? new Date(store.filterStart).getTime() : undefined,
+        before: store.filterEnd ? new Date(store.filterEnd).getTime() : undefined,
         cursor: this.cursor ?? undefined,
         limit: 50,
       }) as string | null;
       this.currentMoreQueryId = queryId;
     },
 
-    search(query: string) {
-      this.searchQuery = query;
-      if (this.systemId) this.load(this.systemId, this.channelIds);
-    },
-
-    onStartChange(value: string) {
-      this.startValue = value;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (this as any).$store.app.setLiveMode(!this.startValue && !this.endValue);
-      if (this.systemId) this.load(this.systemId, this.channelIds);
-    },
-
-    onEndChange(value: string) {
-      this.endValue = value;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (this as any).$store.app.setLiveMode(!this.startValue && !this.endValue);
-      if (this.systemId) this.load(this.systemId, this.channelIds);
-    },
-
     onReset() {
-      this.startValue = "";
-      this.endValue = "";
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (this as any).$store.app.setLiveMode(true);
+      const store = (this as any).$store.app;
+      store.filterSearch = "";
+      store.filterStart = "";
+      store.filterEnd = "";
+      store.setLiveMode(true);
       if (this.systemId) this.load(this.systemId, this.channelIds);
     },
 

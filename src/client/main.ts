@@ -32,6 +32,11 @@ interface AppStore {
   // Live vs archive mode
   liveMode: boolean;
 
+  // Filter state (shared between sidebar and desktop filter bar)
+  filterSearch: string;
+  filterStart: string;
+  filterEnd: string;
+
   init(): void;
   subscribe(systemId: string, channelIds: string[]): void;
   queryTransmissions(params: { system_id: string; channel_ids?: string[]; search?: string; after?: number; before?: number; cursor?: number; limit?: number }): string | null;
@@ -43,6 +48,7 @@ interface AppStore {
   onPlaybackEnded(id: string | null): void;
   toggleAutoplay(): void;
   setLiveMode(live: boolean): void;
+  setFilter(key: 'filterSearch' | 'filterStart' | 'filterEnd', value: string): void;
 }
 
 // Register Alpine components
@@ -73,6 +79,10 @@ const appStore: AppStore = {
   pendingAfterId: null,
 
   liveMode: true,
+
+  filterSearch: "",
+  filterStart: "",
+  filterEnd: "",
 
   init() {
     const wsClient = new WSClient(WSClient.buildUrl());
@@ -190,6 +200,12 @@ const appStore: AppStore = {
     if (!live) {
       this.pendingAfterId = null;
     }
+  },
+
+  setFilter(key: 'filterSearch' | 'filterStart' | 'filterEnd', value: string) {
+    this[key] = value;
+    this.setLiveMode(!this.filterStart && !this.filterEnd);
+    window.dispatchEvent(new CustomEvent('filter-changed'));
   },
 };
 

@@ -47,7 +47,7 @@
 
     <!-- Sidebar -->
     <aside
-      class="fixed inset-y-0 left-0 z-40 w-64 bg-gray-900 border-r border-gray-800 flex flex-col overflow-y-auto transition-transform duration-200 md:relative md:z-auto md:translate-x-0"
+      class="fixed inset-y-0 left-0 z-40 w-72 bg-gray-900 border-r border-gray-800 flex flex-col overflow-y-auto transition-transform duration-200 md:relative md:w-64 md:z-auto md:translate-x-0"
       :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full'"
     >
 
@@ -58,6 +58,37 @@
       </div>
 
       <div class="p-4 flex flex-col gap-6">
+
+        <!-- Search + date range (mobile only — hidden on desktop where the bar above the list is used) -->
+        <div class="flex flex-col gap-3 md:hidden">
+          <input
+            type="text"
+            placeholder="Search transcripts…"
+            :value="$store.app.filterSearch"
+            @input.debounce.400ms="$store.app.setFilter('filterSearch', $event.target.value)"
+            class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-green-500"
+          />
+          <div class="flex items-center gap-2">
+            <span class="text-gray-500 text-xs w-8 shrink-0">From</span>
+            <input
+              type="datetime-local"
+              :value="$store.app.filterStart"
+              @change="$store.app.setFilter('filterStart', $event.target.value)"
+              class="flex-1 bg-gray-800 border rounded px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-green-500 [color-scheme:dark]"
+              :class="$store.app.filterStart ? 'border-yellow-500' : 'border-gray-700'"
+            />
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-gray-500 text-xs w-8 shrink-0">To</span>
+            <input
+              type="datetime-local"
+              :value="$store.app.filterEnd"
+              @change="$store.app.setFilter('filterEnd', $event.target.value)"
+              class="flex-1 bg-gray-800 border rounded px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-green-500 [color-scheme:dark]"
+              :class="$store.app.filterEnd ? 'border-yellow-500' : 'border-gray-700'"
+            />
+          </div>
+        </div>
 
         <!-- System selector -->
         <div x-data="systemSelector" x-init="init()">
@@ -108,45 +139,46 @@
     <!-- Main content -->
     <main class="flex-1 flex flex-col overflow-hidden min-w-0">
 
-      <!-- Search bar + transmission list -->
+      <!-- Search + date/time range filter (desktop only) -->
+      <div class="hidden md:flex px-4 py-2 border-b border-gray-800 bg-gray-900 flex-wrap gap-2">
+        <input
+          type="text"
+          placeholder="Search transcripts…"
+          :value="$store.app.filterSearch"
+          @input.debounce.400ms="$store.app.setFilter('filterSearch', $event.target.value)"
+          class="flex-1 min-w-48 bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-green-500"
+        />
+        <div class="flex items-center gap-1.5">
+          <span class="text-gray-500 text-xs shrink-0">From</span>
+          <input
+            type="datetime-local"
+            :value="$store.app.filterStart"
+            @change="$store.app.setFilter('filterStart', $event.target.value)"
+            class="bg-gray-800 border rounded px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-green-500 [color-scheme:dark]"
+            :class="$store.app.filterStart ? 'border-yellow-500' : 'border-gray-700'"
+          />
+        </div>
+        <div class="flex items-center gap-1.5">
+          <span class="text-gray-500 text-xs shrink-0">To</span>
+          <input
+            type="datetime-local"
+            :value="$store.app.filterEnd"
+            @change="$store.app.setFilter('filterEnd', $event.target.value)"
+            class="bg-gray-800 border rounded px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-green-500 [color-scheme:dark]"
+            :class="$store.app.filterEnd ? 'border-yellow-500' : 'border-gray-700'"
+          />
+        </div>
+      </div>
+
+      <!-- Transmission list -->
       <div
         x-data="transmissionList"
         x-init="init()"
         @channels-changed.window="if ($store.app.systemId) load($store.app.systemId, $event.detail.ids)"
         @range-reset.window="onReset()"
+        @filter-changed.window="if ($store.app.systemId) load($store.app.systemId, channelIds)"
         class="flex-1 flex flex-col overflow-hidden"
       >
-        <!-- Search + date/time range filter -->
-        <div class="px-4 py-2 border-b border-gray-800 bg-gray-900 flex flex-wrap gap-2">
-          <input
-            type="text"
-            placeholder="Search transcripts…"
-            @input.debounce.500ms="search($event.target.value)"
-            class="flex-1 min-w-48 bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-green-500"
-          />
-          <div class="flex items-center gap-1.5 w-full sm:w-auto">
-            <span class="text-gray-500 text-xs shrink-0">From</span>
-            <input
-              type="datetime-local"
-              :value="startValue"
-              @change="onStartChange($event.target.value)"
-              class="flex-1 sm:flex-none bg-gray-800 border rounded px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-green-500 [color-scheme:dark]"
-              :class="startValue ? 'border-yellow-500' : 'border-gray-700'"
-            />
-          </div>
-          <div class="flex items-center gap-1.5 w-full sm:w-auto">
-            <span class="text-gray-500 text-xs shrink-0">To</span>
-            <input
-              type="datetime-local"
-              :value="endValue"
-              @change="onEndChange($event.target.value)"
-              class="flex-1 sm:flex-none bg-gray-800 border rounded px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-green-500 [color-scheme:dark]"
-              :class="endValue ? 'border-yellow-500' : 'border-gray-700'"
-            />
-          </div>
-        </div>
-
-        <!-- List -->
         <div
           class="flex-1 overflow-y-auto pb-16"
           @scroll.passive="lastScrollTime = Date.now()"
@@ -166,14 +198,26 @@
                 :class="$store.app.playingId === tx.id ? 'bg-green-900/25 border-l-2 border-l-green-500' : 'hover:bg-gray-900'"
                 :data-tx-id="tx.id"
               >
-                <div class="flex items-center justify-between gap-2">
-                  <div class="flex items-center gap-1.5 text-xs min-w-0 flex-1 overflow-hidden">
-                    <span class="text-green-400 font-medium shrink-0" x-text="$store.app.systemName"></span>
-                    <span class="text-gray-600 shrink-0">·</span>
-                    <span class="text-blue-400 shrink-0" x-text="$store.app.channelMap[tx.channel_id] ?? '?'"></span>
-                    <span class="text-gray-600 shrink-0">·</span>
-                    <span class="text-gray-400 truncate" x-text="formatTime(tx.recorded_at)"></span>
+                <!-- Meta row: desktop = single line, mobile = stacked -->
+                <div class="flex items-start justify-between gap-2 mb-1">
+                  <!-- Left: system · channel · timestamp -->
+                  <div class="flex-1 min-w-0 text-xs">
+                    <!-- Desktop: single row -->
+                    <div class="hidden sm:flex items-center gap-1.5">
+                      <span class="text-green-400 font-medium shrink-0" x-text="$store.app.systemName"></span>
+                      <span class="text-gray-600">·</span>
+                      <span class="text-blue-400 truncate" x-text="$store.app.channelMap[tx.channel_id] ?? '?'"></span>
+                      <span class="text-gray-600">·</span>
+                      <span class="text-gray-500 truncate" x-text="formatTime(tx.recorded_at)"></span>
+                    </div>
+                    <!-- Mobile: stacked -->
+                    <div class="sm:hidden flex flex-col gap-0.5">
+                      <span class="text-green-400 font-medium" x-text="$store.app.systemName"></span>
+                      <span class="text-blue-400 truncate" x-text="$store.app.channelMap[tx.channel_id] ?? '?'"></span>
+                      <span class="text-gray-500" x-text="formatTime(tx.recorded_at)"></span>
+                    </div>
                   </div>
+                  <!-- Right: actions (always visible) -->
                   <div class="flex items-center gap-1.5 shrink-0">
                     <span class="text-gray-500 text-xs font-mono" x-text="formatDuration(tx.duration_ms)"></span>
                     <a
@@ -190,20 +234,22 @@
                     >▶</button>
                   </div>
                 </div>
+
+                <!-- Transcript -->
                 <div
                   x-show="tx.transcript"
-                  class="mt-1 text-gray-300 text-xs leading-relaxed line-clamp-2"
+                  class="text-gray-300 text-xs leading-relaxed line-clamp-2"
                   x-text="tx.transcript"
                 ></div>
                 <div
                   x-show="!tx.transcript"
-                  class="mt-1 text-gray-600 text-xs italic"
+                  class="text-gray-600 text-xs italic"
                 >No transcript</div>
               </div>
             </template>
           </div>
 
-          <!-- Infinite scroll sentinel (observed by IntersectionObserver) -->
+          <!-- Infinite scroll sentinel -->
           <div id="tx-list-sentinel" x-show="hasMore" class="h-1"></div>
 
           <!-- Load more fallback button -->
@@ -240,7 +286,6 @@
 
     <!-- Controls -->
     <div class="px-4 py-2 flex items-center gap-3">
-      <!-- Info -->
       <div class="flex-1 min-w-0">
         <div x-show="!currentTransmission" class="text-gray-600 text-xs">No audio playing</div>
         <div x-show="currentTransmission" class="text-xs truncate">
@@ -249,23 +294,17 @@
           <span class="text-gray-400" x-text="currentTransmission ? new Date(currentTransmission.recorded_at).toLocaleString() : ''"></span>
         </div>
       </div>
-
-      <!-- Time -->
       <span
         x-show="audioDuration > 0"
         class="text-gray-500 text-xs font-mono shrink-0 hidden sm:inline"
         x-text="formatProgress(currentTime) + ' / ' + formatProgress(audioDuration)"
       ></span>
-
-      <!-- Autoplay toggle -->
       <button
         @click="$store.app.toggleAutoplay()"
         :class="$store.app.autoplay ? 'bg-green-700 text-white' : 'bg-gray-700 text-gray-300'"
         class="px-2 sm:px-3 py-1 rounded text-xs font-semibold transition-colors shrink-0"
         x-text="$store.app.autoplay ? 'Auto ON' : 'Auto OFF'"
       ></button>
-
-      <!-- Stop -->
       <button
         @click="stop()"
         x-show="playing"
