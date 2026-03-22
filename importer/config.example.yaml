@@ -35,3 +35,18 @@ max_age_hours: 24
 
 # Logging level: DEBUG, INFO, WARNING, ERROR
 log_level: "INFO"
+
+# Local transcription via faster-whisper (optional).
+# When enabled, audio is transcribed on this machine before upload and the
+# transcript is sent with the file — the server's Whisper task is skipped.
+#
+# Memory guidance (int8 on CPU):
+#   medium  → ~1.5 GB    large-v3 → ~2 GB   (safe for a 4 GB budget)
+#
+# transcription:
+#   enabled: false
+#   model: "large-v3"
+#   device: "cpu"          # "cpu" or "cuda"
+#   compute_type: "int8"   # "int8" (CPU recommended), "float16" (GPU)
+#   cpu_threads: 4
+#   language: "en"         # set to null for auto-detect

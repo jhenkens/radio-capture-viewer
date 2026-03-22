@@ -18,3 +18,4 @@
 ✓ Create a TODOs folder, and add some thoughts about how to maintain the in-memory browser side database, specifically around pruning the older-records as one is autoplaying for hours upon hours.
 1. Create a way to store prompts for transcription on channel and station. We will send both of them.
 2. Update the importer config to accept prefixed environment variables as well, so we can override the default config on the docker container via environment variables. We should bake in an empty, basic config.
+3. Move auto-create to a server-side flag only. It shouldn't be part of the importer. Importer should have to just specify channel name and it should have to be an exact match. As the API Key is scoped to a specific station, the importer shouldn't need to query anything about channels/stations, and those endpoints shouldn't eixst.

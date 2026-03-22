@@ -27,15 +27,6 @@ export interface TransmissionDTO {
   created_at: number;
 }
 
-export interface TransmissionFileDTO {
-  id: string;
-  transmission_id: string;
-  provider: string;
-  path: string;
-  size_bytes: number;
-  created_at: number;
-}
-
 // WebSocket message types
 
 export type ServerWSMessage =
@@ -46,15 +37,9 @@ export type ServerWSMessage =
 
 export type ClientWSMessage =
   | { type: "subscribe"; system_id: string; channel_ids?: string[] }
-  | { type: "autoplay"; enabled: boolean; last_played_id?: string }
-  | { type: "query"; query_id: string; system_id: string; channel_ids?: string[]; search?: string; cursor?: number; limit?: number };
+  | { type: "query"; query_id: string; system_id: string; channel_ids?: string[]; search?: string; before?: number; cursor?: number; limit?: number };
 
 // API response shapes
-
-export interface PaginatedTransmissions {
-  items: TransmissionDTO[];
-  next_cursor: number | null;
-}
 
 export interface AdminStationResponse {
   system: { id: string; name: string };

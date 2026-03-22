@@ -8,8 +8,6 @@ import type { TransmissionDTO, ServerWSMessage } from "../../shared/types.js";
 interface ConnectionState {
   system_id: string | null;
   channel_ids: string[] | null; // null = all channels
-  autoplay: boolean;
-  last_played_id: string | null;
 }
 
 export class ConnectionManager {
@@ -26,8 +24,6 @@ export class ConnectionManager {
     this.connections.set(ws, {
       system_id: null,
       channel_ids: null,
-      autoplay: false,
-      last_played_id: null,
     });
     console.info(`[WS] Client connected (total: ${this.connections.size})`);
   }
@@ -42,15 +38,6 @@ export class ConnectionManager {
     if (!state) return;
     state.system_id = system_id;
     state.channel_ids = channel_ids ?? null;
-  }
-
-  setAutoplay(ws: WebSocket, enabled: boolean, last_played_id?: string): void {
-    const state = this.connections.get(ws);
-    if (!state) return;
-    state.autoplay = enabled;
-    if (last_played_id !== undefined) {
-      state.last_played_id = last_played_id;
-    }
   }
 
   private async onTransmissionAvailable(event: TransmissionAvailableEvent): Promise<void> {
@@ -86,16 +73,15 @@ export class ConnectionManager {
       if (ws.readyState !== 1 /* OPEN */) continue;
       if (state.system_id !== system_id) continue;
       if (state.channel_ids !== null && !state.channel_ids.includes(channel_id)) continue;
-
       this.send(ws, message);
     }
   }
 
   async handleQuery(
     ws: WebSocket,
-    msg: { query_id: string; system_id: string; channel_ids?: string[]; search?: string; cursor?: number; limit?: number }
+    msg: { query_id: string; system_id: string; channel_ids?: string[]; search?: string; before?: number; cursor?: number; limit?: number }
   ): Promise<void> {
-    const { query_id, system_id, channel_ids, search, cursor, limit: lim } = msg;
+    const { query_id, system_id, channel_ids, search, before, cursor, limit: lim } = msg;
     const limit = Math.min(lim ?? 50, 200);
 
     const conditions = [
@@ -108,6 +94,9 @@ export class ConnectionManager {
     }
     if (search) {
       conditions.push(like(schema.transmissions.transcript, `%${search}%`));
+    }
+    if (before !== undefined) {
+      conditions.push(lt(schema.transmissions.recorded_at, before));
     }
     if (cursor !== undefined) {
       conditions.push(lt(schema.transmissions.recorded_at, cursor));

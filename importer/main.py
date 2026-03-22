@@ -50,6 +50,7 @@ from watchdog.observers import Observer
 
 from rtl_parser import ChannelEntry, build_lookup, parse_rtl_configs
 from state import StateDB
+from transcriber import Transcriber
 from uploader import Uploader
 
 logging.basicConfig(
@@ -194,6 +195,8 @@ class FileProcessor:
         self.auto_create = config.get("auto_create_channels", False)
         self.delete_after = config.get("delete_after_upload", False)
         self.use_presign = config.get("use_presign", False)
+        transcription_cfg = config.get("transcription", {})
+        self.transcriber = Transcriber(transcription_cfg) if transcription_cfg.get("enabled") else None
 
     def __call__(self, filepath: str) -> None:
         # Skip if already recorded in the state DB
@@ -220,13 +223,23 @@ class FileProcessor:
             logger.warning("No channel for label '%s' — skipping %s", entry.label, filename)
             return
 
+        transcript: str | None = None
+        if self.transcriber is not None:
+            try:
+                transcript = self.transcriber.transcribe(filepath)
+                logger.info("Transcribed %s: %s", filename, transcript[:120] if transcript else "(empty)")
+            except Exception as e:
+                logger.warning("Transcription failed for %s, uploading without transcript: %s", filename, e)
+
         if self.use_presign:
             transmission_id = self.uploader.upload_file(
-                filepath, channel_id, recorded_at=recorded_at, frequency_hz=entry.freq_hz
+                filepath, channel_id, recorded_at=recorded_at, frequency_hz=entry.freq_hz,
+                transcript=transcript,
             )
         else:
             transmission_id = self.uploader.upload_direct(
-                filepath, channel_id, recorded_at=recorded_at, frequency_hz=entry.freq_hz
+                filepath, channel_id, recorded_at=recorded_at, frequency_hz=entry.freq_hz,
+                transcript=transcript,
             )
 
         if transmission_id:

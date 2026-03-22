@@ -25,6 +25,7 @@ const InitiateBody = z.object({
 
 const CompleteBody = z.object({
   upload_session_id: z.string().uuid(),
+  transcript: z.string().optional(),
 });
 
 export async function uploadRoutes(
@@ -146,6 +147,7 @@ export async function uploadRoutes(
       }
 
       const now = Date.now();
+      const transcript = parsed.data.transcript ?? null;
 
       // Download from S3 into cache
       let fileBuffer: Buffer;
@@ -168,6 +170,14 @@ export async function uploadRoutes(
         created_at: now,
       });
 
+      // Apply transcript if provided
+      if (transcript) {
+        await db
+          .update(schema.transmissions)
+          .set({ transcript })
+          .where(eq(schema.transmissions.id, session.transmission_id));
+      }
+
       // Mark session complete
       await db
         .update(schema.upload_sessions)
@@ -188,7 +198,8 @@ export async function uploadRoutes(
             session.transmission_id,
             tx.system_id,
             tx.channel_id,
-            now
+            now,
+            !!transcript
           )
         : false;
       if (hasTasks) taskRunner.wake();
@@ -212,6 +223,7 @@ export async function uploadRoutes(
       let duration_ms: number | undefined;
       let recorded_at: number | undefined;
       let frequency_hz: number | undefined;
+      let transcript: string | undefined;
 
       const contentType = request.headers["content-type"] ?? "";
 
@@ -241,6 +253,7 @@ export async function uploadRoutes(
         frequency_hz = fields["frequency_hz"]?.value
           ? parseInt(fields["frequency_hz"].value, 10)
           : undefined;
+        transcript = fields["transcript"]?.value || undefined;
       } else {
         // JSON + base64
         const body = request.body as {
@@ -251,6 +264,7 @@ export async function uploadRoutes(
           duration_ms?: number;
           recorded_at?: number;
           frequency_hz?: number;
+          transcript?: string;
         };
 
         if (!body.file_data || !body.channel_id || !body.filename || !body.content_type) {
@@ -264,6 +278,7 @@ export async function uploadRoutes(
         duration_ms = body.duration_ms;
         recorded_at = body.recorded_at;
         frequency_hz = body.frequency_hz;
+        transcript = body.transcript;
       }
 
       if (!channel_id) {
@@ -299,7 +314,7 @@ export async function uploadRoutes(
         system_id: system.id,
         channel_id,
         available: false,
-        transcript: null,
+        transcript: transcript ?? null,
         duration_ms: duration_ms ?? null,
         frequency_hz: frequency_hz ?? null,
         recorded_at: recorded_at ?? now,
@@ -321,7 +336,8 @@ export async function uploadRoutes(
         transmissionId,
         system.id,
         channel_id,
-        now
+        now,
+        !!transcript
       );
       if (hasTasks) taskRunner.wake();
 
@@ -332,7 +348,7 @@ export async function uploadRoutes(
 
 /**
  * Creates required tasks for a new transmission.
- * analyze_file is always created first; whisper is added when enabled.
+ * analyze_file is always created; whisper is skipped when a transcript was already provided.
  * The transmission becomes available once all required tasks complete (via TaskRunner).
  */
 async function createTasksOrMarkAvailable(
@@ -340,7 +356,8 @@ async function createTasksOrMarkAvailable(
   transmissionId: string,
   _systemId: string,
   _channelId: string,
-  now: number
+  now: number,
+  hasTranscript: boolean
 ): Promise<boolean> {
   const config = getConfig();
 
@@ -356,11 +373,12 @@ async function createTasksOrMarkAvailable(
       failure_count: 0,
       retry_limit: 3,
       retry_delay_ms: 5_000,
+      retry_after: null,
       created_at: now,
     },
   ];
 
-  if (config.whisper.enabled) {
+  if (config.whisper.enabled && !hasTranscript) {
     tasks.push({
       id: uuidv4(),
       transmission_id: transmissionId,
@@ -372,6 +390,7 @@ async function createTasksOrMarkAvailable(
       failure_count: 0,
       retry_limit: 3,
       retry_delay_ms: 30_000,
+      retry_after: null,
       created_at: now,
     });
   }

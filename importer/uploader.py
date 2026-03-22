@@ -67,6 +67,7 @@ class Uploader:
         recorded_at: int | None = None,
         duration_ms: int | None = None,
         frequency_hz: int | None = None,
+        transcript: str | None = None,
     ) -> str | None:
         """
         Upload using the presigned URL flow (S3/R2).
@@ -128,9 +129,12 @@ class Uploader:
 
         # Step 3: Complete
         try:
+            complete_payload: dict = {"upload_session_id": upload_session_id}
+            if transcript:
+                complete_payload["transcript"] = transcript
             complete_resp = self.session.post(
                 f"{self.server_url}/api/admin/upload/complete",
-                json={"upload_session_id": upload_session_id},
+                json=complete_payload,
                 timeout=60,
             )
             complete_resp.raise_for_status()
@@ -148,6 +152,7 @@ class Uploader:
         recorded_at: int | None = None,
         duration_ms: int | None = None,
         frequency_hz: int | None = None,
+        transcript: str | None = None,
     ) -> str | None:
         """
         Upload directly as multipart form data (local storage or fallback).
@@ -169,6 +174,8 @@ class Uploader:
                     form_data["duration_ms"] = str(duration_ms)
                 if frequency_hz is not None:
                     form_data["frequency_hz"] = str(frequency_hz)
+                if transcript:
+                    form_data["transcript"] = transcript
 
                 resp = self.session.post(
                     f"{self.server_url}/api/admin/upload/direct",

@@ -1,8 +1,6 @@
 import type { TransmissionDTO } from "../../shared/types";
 
 export interface TransmissionListData {
-  transmissions: TransmissionDTO[];
-  localDb: Record<string, TransmissionDTO>;
   loading: boolean;
   loadingMore: boolean;
   error: string | null;
@@ -11,9 +9,9 @@ export interface TransmissionListData {
   systemId: string | null;
   channelIds: string[];
   searchQuery: string;
-  playingId: string | null;
+  selectedDate: string;
+  beforeTs: number | null;
   lastScrollTime: number;
-  autoplayPendingAfterId: string | null;
   currentQueryId: string | null;
   currentMoreQueryId: string | null;
 
@@ -21,20 +19,15 @@ export interface TransmissionListData {
   load(systemId: string, channelIds?: string[]): void;
   loadMore(): void;
   search(query: string): void;
+  onDateChange(value: string): void;
   handleQueryResult(result: { query_id: string; items: TransmissionDTO[]; next_cursor: number | null }): void;
-  addTransmission(tx: TransmissionDTO): void;
-  handleAutoplayNext(id: string): void;
   scrollToPlaying(): void;
   formatTime(ts: number): string;
   formatDuration(ms: number | null): string;
-  _matchesFilters(tx: TransmissionDTO): boolean;
-  _mergeAndRebuild(items: TransmissionDTO[]): void;
 }
 
 export function transmissionList(): TransmissionListData {
   return {
-    transmissions: [],
-    localDb: {},
     loading: false,
     loadingMore: false,
     error: null,
@@ -43,27 +36,30 @@ export function transmissionList(): TransmissionListData {
     systemId: null,
     channelIds: [],
     searchQuery: "",
-    playingId: null,
+    selectedDate: "",
+    beforeTs: null,
     lastScrollTime: 0,
-    autoplayPendingAfterId: null,
     currentQueryId: null,
     currentMoreQueryId: null,
 
     init() {
       this.lastScrollTime = 0;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (this as any).$store.app.onQueryResult(
+        (result: Parameters<typeof this.handleQueryResult>[0]) => this.handleQueryResult(result)
+      );
+
       setInterval(() => {
-        if (!this.playingId) return;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if (!(this as any).$store.app.playingId) return;
         if (Date.now() - this.lastScrollTime < 15_000) return;
         this.scrollToPlaying();
       }, 2_000);
 
-      // Infinite scroll: auto-loadMore when sentinel enters viewport
       const sentinel = document.getElementById("tx-list-sentinel");
       if (sentinel && "IntersectionObserver" in window) {
         const observer = new IntersectionObserver(
-          (entries) => {
-            if (entries[0]?.isIntersecting) this.loadMore();
-          },
+          (entries) => { if (entries[0]?.isIntersecting) this.loadMore(); },
           { rootMargin: "200px" }
         );
         observer.observe(sentinel);
@@ -73,16 +69,14 @@ export function transmissionList(): TransmissionListData {
     load(systemId: string, channelIds: string[] = []) {
       this.systemId = systemId;
       this.channelIds = channelIds;
-      this.localDb = {};
-      this.transmissions = [];
       this.cursor = null;
       this.hasMore = false;
       this.currentMoreQueryId = null;
       this.error = null;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (this as any).$store.app.clearTransmissions();
 
-      if (!channelIds.length) {
-        return;
-      }
+      if (!channelIds.length) return;
 
       this.loading = true;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -90,6 +84,7 @@ export function transmissionList(): TransmissionListData {
         system_id: systemId,
         channel_ids: channelIds,
         search: this.searchQuery || undefined,
+        before: this.beforeTs ?? undefined,
         limit: 50,
       }) as string | null;
       this.currentQueryId = queryId;
@@ -103,6 +98,7 @@ export function transmissionList(): TransmissionListData {
         system_id: this.systemId,
         channel_ids: this.channelIds.length ? this.channelIds : undefined,
         search: this.searchQuery || undefined,
+        before: this.beforeTs ?? undefined,
         cursor: this.cursor ?? undefined,
         limit: 50,
       }) as string | null;
@@ -111,20 +107,36 @@ export function transmissionList(): TransmissionListData {
 
     search(query: string) {
       this.searchQuery = query;
-      if (this.systemId) {
-        this.load(this.systemId, this.channelIds);
+      if (this.systemId) this.load(this.systemId, this.channelIds);
+    },
+
+    onDateChange(value: string) {
+      this.selectedDate = value;
+      if (value) {
+        // Compute start of the next day in local time (exclusive upper bound)
+        const [year, month, day] = value.split("-").map(Number);
+        this.beforeTs = new Date(year!, month! - 1, day! + 1).getTime();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (this as any).$store.app.setLiveMode(false);
+      } else {
+        this.beforeTs = null;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (this as any).$store.app.setLiveMode(true);
       }
+      if (this.systemId) this.load(this.systemId, this.channelIds);
     },
 
     handleQueryResult(result: { query_id: string; items: TransmissionDTO[]; next_cursor: number | null }) {
       if (result.query_id === this.currentQueryId) {
-        this._mergeAndRebuild(result.items);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (this as any).$store.app.mergeTransmissions(result.items);
         this.cursor = result.next_cursor;
         this.hasMore = result.next_cursor !== null;
         this.loading = false;
         this.currentQueryId = null;
       } else if (result.query_id === this.currentMoreQueryId) {
-        this._mergeAndRebuild(result.items);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (this as any).$store.app.mergeTransmissions(result.items);
         this.cursor = result.next_cursor;
         this.hasMore = result.next_cursor !== null;
         this.loadingMore = false;
@@ -132,48 +144,11 @@ export function transmissionList(): TransmissionListData {
       }
     },
 
-    addTransmission(tx: TransmissionDTO) {
-      if (!this._matchesFilters(tx)) return;
-      this._mergeAndRebuild([tx]);
-      if (this.autoplayPendingAfterId !== null) {
-        const id = this.autoplayPendingAfterId;
-        this.autoplayPendingAfterId = null;
-        this.handleAutoplayNext(id);
-      }
-    },
-
-    handleAutoplayNext(id: string) {
-      const idx = this.transmissions.findIndex((tx) => tx.id === id);
-      if (idx > 0) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (this as any).$dispatch("play-transmission", this.transmissions[idx - 1]!);
-      } else if (idx === 0) {
-        this.autoplayPendingAfterId = id;
-      }
-    },
-
-    _matchesFilters(tx: TransmissionDTO): boolean {
-      if (this.systemId && tx.system_id !== this.systemId) return false;
-      if (this.channelIds.length > 0 && !this.channelIds.includes(tx.channel_id)) return false;
-      if (this.searchQuery) {
-        const q = this.searchQuery.toLowerCase();
-        if (!(tx.transcript?.toLowerCase().includes(q) ?? false)) return false;
-      }
-      return true;
-    },
-
-    _mergeAndRebuild(items: TransmissionDTO[]) {
-      for (const tx of items) {
-        this.localDb[tx.id] = tx;
-      }
-      this.transmissions = Object.values(this.localDb).sort(
-        (a, b) => b.recorded_at - a.recorded_at
-      );
-    },
-
     scrollToPlaying() {
-      if (!this.playingId) return;
-      const el = document.querySelector(`[data-tx-id="${this.playingId}"]`);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const id = (this as any).$store.app.playingId as string | null;
+      if (!id) return;
+      const el = document.querySelector(`[data-tx-id="${id}"]`);
       if (el) el.scrollIntoView({ behavior: "smooth", block: "nearest" });
     },
 

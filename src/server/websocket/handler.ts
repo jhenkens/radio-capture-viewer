@@ -24,8 +24,6 @@ export function handleWebSocket(ws: WebSocket, manager: ConnectionManager): void
       }
       manager.subscribe(ws, msg.system_id, msg.channel_ids);
       manager.send(ws, { type: "subscribed" });
-    } else if (msg.type === "autoplay") {
-      manager.setAutoplay(ws, msg.enabled, msg.last_played_id);
     } else if (msg.type === "query") {
       if (!msg.query_id || !msg.system_id) {
         manager.send(ws, { type: "error", message: "query_id and system_id are required" });

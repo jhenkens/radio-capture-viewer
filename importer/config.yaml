@@ -33,5 +33,18 @@ use_presign: false
 retry_interval_minutes: 5
 max_age_hours: 24
 
+# Local transcription with faster-whisper (runs on the import machine before upload).
+# If enabled, the transcript is included in the upload payload and the server will
+# trust it, skipping its own Whisper task. If disabled (or transcription fails),
+# the server will queue a Whisper task itself when its own whisper is enabled.
+#
+# transcription:
+#   enabled: false
+#   model: "large-v3"       # tiny / base / small / medium / large-v3
+#   device: "cpu"           # "cpu" or "cuda"
+#   compute_type: "int8"    # "int8" (CPU), "float16" (GPU), "float32"
+#   cpu_threads: 4
+#   language: "en"          # set to null for auto-detect
+
 # Logging level: DEBUG, INFO, WARNING, ERROR
 log_level: "INFO"
