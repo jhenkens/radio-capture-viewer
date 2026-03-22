@@ -21,6 +21,7 @@ export interface TransmissionListData {
   search(query: string): void;
   onStartChange(value: string): void;
   onEndChange(value: string): void;
+  onReset(): void;
   handleQueryResult(result: { query_id: string; items: TransmissionDTO[]; next_cursor: number | null }): void;
   scrollToPlaying(): void;
   formatTime(ts: number): string;
@@ -124,6 +125,14 @@ export function transmissionList(): TransmissionListData {
       this.endValue = value;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (this as any).$store.app.setLiveMode(!this.startValue && !this.endValue);
+      if (this.systemId) this.load(this.systemId, this.channelIds);
+    },
+
+    onReset() {
+      this.startValue = "";
+      this.endValue = "";
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (this as any).$store.app.setLiveMode(true);
       if (this.systemId) this.load(this.systemId, this.channelIds);
     },
 
