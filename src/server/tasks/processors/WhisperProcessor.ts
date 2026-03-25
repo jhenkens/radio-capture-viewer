@@ -10,7 +10,8 @@ export class WhisperProcessor implements TaskProcessor {
     private readonly baseUrl: string,
     private readonly apiKey: string,
     private readonly model: string,
-    private readonly prompt: string | undefined,
+    private readonly globalPrompt: string | undefined,
+    private readonly globalHotwords: string | undefined,
     private readonly responseFormat: "json" | "text" | "verbose_json"
   ) {}
 
@@ -44,6 +45,33 @@ export class WhisperProcessor implements TaskProcessor {
     const ext = file.path.split(".").pop() ?? "mp3";
     const filename = `audio.${ext}`;
 
+    // Fetch system + channel rows once for both prompt and hotwords
+    const systemRows = await db
+      .select({ whisper_prompt: schema.systems.whisper_prompt, whisper_hotwords: schema.systems.whisper_hotwords })
+      .from(schema.systems)
+      .where(eq(schema.systems.id, transmission.system_id));
+
+    const channelRows = await db
+      .select({ whisper_prompt: schema.channels.whisper_prompt, whisper_hotwords: schema.channels.whisper_hotwords })
+      .from(schema.channels)
+      .where(eq(schema.channels.id, transmission.channel_id));
+
+    // Build prompt: global + system + channel (all non-empty, joined with space)
+    const promptParts = [
+      this.globalPrompt,
+      systemRows[0]?.whisper_prompt,
+      channelRows[0]?.whisper_prompt,
+    ].filter((p): p is string => !!p);
+    const prompt = promptParts.length ? promptParts.join(" ") : undefined;
+
+    // Build hotwords: global + system + channel (all non-empty, joined with comma)
+    const hotwordsParts = [
+      this.globalHotwords,
+      systemRows[0]?.whisper_hotwords,
+      channelRows[0]?.whisper_hotwords,
+    ].filter((p): p is string => !!p);
+    const hotwords = hotwordsParts.length ? hotwordsParts.join(",") : undefined;
+
     // Call Whisper API
     const client = new OpenAI({
       baseURL: this.baseUrl + "/v1",
@@ -52,10 +80,12 @@ export class WhisperProcessor implements TaskProcessor {
 
     const audioFile = await toFile(audioBuffer, filename);
 
-    const response = await client.audio.transcriptions.create({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const response = await (client.audio.transcriptions.create as any)({
       file: audioFile,
       model: this.model,
-      ...(this.prompt ? { prompt: this.prompt } : {}),
+      ...(prompt ? { prompt } : {}),
+      ...(hotwords ? { hotwords } : {}),
       response_format: this.responseFormat,
     });
 

@@ -15,7 +15,7 @@ import type {
 const PRESIGN_EXPIRES_S = 3600; // 1 hour
 
 const InitiateBody = z.object({
-  channel_id: z.string().uuid(),
+  channel_name: z.string().min(1),
   filename: z.string().min(1),
   content_type: z.string().min(1),
   duration_ms: z.number().int().positive().optional(),
@@ -27,6 +27,38 @@ const CompleteBody = z.object({
   upload_session_id: z.string().uuid(),
   transcript: z.string().optional(),
 });
+
+/**
+ * Resolve a channel by name for a given system. Creates the channel if
+ * channels.autoCreate is enabled. Returns null if not found and autoCreate is off.
+ */
+async function resolveChannelByName(
+  db: ReturnType<typeof getDb>,
+  systemId: string,
+  channelName: string,
+  now: number
+): Promise<{ id: string } | null> {
+  const existing = await db
+    .select({ id: schema.channels.id })
+    .from(schema.channels)
+    .where(and(eq(schema.channels.system_id, systemId), eq(schema.channels.name, channelName)));
+
+  if (existing.length) return existing[0]!;
+
+  const config = getConfig();
+  if (!config.channels.autoCreate) return null;
+
+  const id = uuidv4();
+  await db.insert(schema.channels).values({
+    id,
+    system_id: systemId,
+    name: channelName,
+    description: null,
+    created_at: now,
+  });
+  console.info(`[upload] Auto-created channel '${channelName}' → ${id}`);
+  return { id };
+}
 
 export async function uploadRoutes(
   fastify: FastifyInstance,
@@ -54,20 +86,11 @@ export async function uploadRoutes(
       const body = parsed.data;
       const system = request.system!;
       const db = getDb();
+      const now = Date.now();
 
-      // Validate channel belongs to system
-      const channels = await db
-        .select()
-        .from(schema.channels)
-        .where(
-          and(
-            eq(schema.channels.id, body.channel_id),
-            eq(schema.channels.system_id, system.id)
-          )
-        );
-
-      if (!channels.length) {
-        return reply.status(404).send({ error: "Channel not found" });
+      const channel = await resolveChannelByName(db, system.id, body.channel_name, now);
+      if (!channel) {
+        return reply.status(404).send({ error: `Channel '${body.channel_name}' not found` });
       }
 
       const transmissionId = uuidv4();
@@ -80,14 +103,13 @@ export async function uploadRoutes(
         PRESIGN_EXPIRES_S
       );
 
-      const now = Date.now();
       const expiresAt = now + PRESIGN_EXPIRES_S * 1000;
 
       // Create transmission
       await db.insert(schema.transmissions).values({
         id: transmissionId,
         system_id: system.id,
-        channel_id: body.channel_id,
+        channel_id: channel.id,
         available: false,
         transcript: null,
         duration_ms: body.duration_ms ?? null,
@@ -217,7 +239,7 @@ export async function uploadRoutes(
       const now = Date.now();
 
       let fileBuffer: Buffer;
-      let channel_id: string;
+      let channel_name: string;
       let filename: string;
       let content_type: string;
       let duration_ms: number | undefined;
@@ -243,7 +265,7 @@ export async function uploadRoutes(
         content_type = data.mimetype;
 
         const fields = data.fields as Record<string, { value: string }>;
-        channel_id = fields["channel_id"]?.value ?? "";
+        channel_name = fields["channel_name"]?.value ?? "";
         duration_ms = fields["duration_ms"]?.value
           ? parseInt(fields["duration_ms"].value, 10)
           : undefined;
@@ -257,7 +279,7 @@ export async function uploadRoutes(
       } else {
         // JSON + base64
         const body = request.body as {
-          channel_id?: string;
+          channel_name?: string;
           file_data?: string;
           content_type?: string;
           filename?: string;
@@ -267,12 +289,12 @@ export async function uploadRoutes(
           transcript?: string;
         };
 
-        if (!body.file_data || !body.channel_id || !body.filename || !body.content_type) {
+        if (!body.file_data || !body.channel_name || !body.filename || !body.content_type) {
           return reply.status(400).send({ error: "Missing required fields" });
         }
 
         fileBuffer = Buffer.from(body.file_data, "base64");
-        channel_id = body.channel_id;
+        channel_name = body.channel_name;
         filename = body.filename;
         content_type = body.content_type;
         duration_ms = body.duration_ms;
@@ -281,23 +303,13 @@ export async function uploadRoutes(
         transcript = body.transcript;
       }
 
-      if (!channel_id) {
-        return reply.status(400).send({ error: "channel_id is required" });
+      if (!channel_name) {
+        return reply.status(400).send({ error: "channel_name is required" });
       }
 
-      // Validate channel
-      const channels = await db
-        .select()
-        .from(schema.channels)
-        .where(
-          and(
-            eq(schema.channels.id, channel_id),
-            eq(schema.channels.system_id, system.id)
-          )
-        );
-
-      if (!channels.length) {
-        return reply.status(404).send({ error: "Channel not found" });
+      const channel = await resolveChannelByName(db, system.id, channel_name, now);
+      if (!channel) {
+        return reply.status(404).send({ error: `Channel '${channel_name}' not found` });
       }
 
       const transmissionId = uuidv4();
@@ -312,7 +324,7 @@ export async function uploadRoutes(
       await db.insert(schema.transmissions).values({
         id: transmissionId,
         system_id: system.id,
-        channel_id,
+        channel_id: channel.id,
         available: false,
         transcript: transcript ?? null,
         duration_ms: duration_ms ?? null,
@@ -335,7 +347,7 @@ export async function uploadRoutes(
         db,
         transmissionId,
         system.id,
-        channel_id,
+        channel.id,
         now,
         !!transcript
       );

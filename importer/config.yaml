@@ -21,9 +21,6 @@ watch_dir: "/Users/johanhenkens/Downloads/recordings"
 delete_after_upload: false
 # state_file: "/path/to"
 
-# Automatically create channels that exist in the rtl config but not on the server
-auto_create_channels: true
-
 # Upload method:
 #   false — multipart direct upload (works with local storage, recommended for local dev)
 #   true  — presigned S3/R2 URL flow (requires S3 storage configured on the server)

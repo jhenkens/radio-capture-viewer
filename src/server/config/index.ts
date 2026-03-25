@@ -36,7 +36,9 @@ const ConfigSchema = z.object({
     apiKey: z.string().default(""),
     model: z.string().default("whisper-1"),
     prompt: z.string().optional(),
+    hotwords: z.string().optional(),
     responseFormat: z.enum(["json", "text", "verbose_json"]).default("json"),
+    concurrency: z.number().int().min(1).default(1),
   }).default({}),
   channels: z.object({
     autoCreate: z.boolean().default(false),
@@ -77,8 +79,11 @@ function applyEnvOverrides(base: Record<string, unknown>): Record<string, unknow
   if (process.env["WHISPER_API_KEY"]) set(["whisper", "apiKey"], process.env["WHISPER_API_KEY"]);
   if (process.env["WHISPER_MODEL"]) set(["whisper", "model"], process.env["WHISPER_MODEL"]);
   if (process.env["WHISPER_PROMPT"]) set(["whisper", "prompt"], process.env["WHISPER_PROMPT"]);
+  if (process.env["WHISPER_HOTWORDS"]) set(["whisper", "hotwords"], process.env["WHISPER_HOTWORDS"]);
+  if (process.env["WHISPER_CONCURRENCY"]) set(["whisper", "concurrency"], parseInt(process.env["WHISPER_CONCURRENCY"]!, 10));
   if (process.env["WHISPER_RESPONSE_FORMAT"]) set(["whisper", "responseFormat"], process.env["WHISPER_RESPONSE_FORMAT"]);
   if (process.env["TASKS_CONCURRENCY"]) set(["tasks", "concurrency"], parseInt(process.env["TASKS_CONCURRENCY"]!, 10));
+  if (process.env["CHANNELS_AUTO_CREATE"]) set(["channels", "autoCreate"], process.env["CHANNELS_AUTO_CREATE"] === "true");
   if (process.env["TRUST_PROXY"]) set(["trustProxy"], process.env["TRUST_PROXY"] === "true");
 
   return cfg;

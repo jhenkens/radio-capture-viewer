@@ -1,0 +1,35 @@
+# Radio Capture Importer — default configuration
+# Override any value with RADIO_CAPTURE_IMPORTER_<KEY> environment variables.
+# Example: RADIO_CAPTURE_IMPORTER_SERVER_URL=http://myserver:3000
+
+server_url: "http://localhost:3000"
+api_key: ""
+
+# Path to one rtl-airband config file (or use rtl_configs list)
+# rtl_config: "/path/to/rtlsdr-airband.conf"
+# rtl_configs:
+#   - "/path/to/first.conf"
+#   - "/path/to/second.conf"
+
+watch_dir: "/recordings"
+
+delete_after_upload: false
+# state_file: "/path/to/state.db"
+
+use_presign: false
+
+retry_interval_minutes: 5
+max_age_hours: 24
+
+# upload_workers: 4
+
+# Local transcription (runs on this machine before upload)
+# transcription:
+#   enabled: false
+#   model: "large-v3"
+#   device: "cpu"
+#   compute_type: "int8"
+#   cpu_threads: 4
+#   language: "en"
+
+log_level: "INFO"

@@ -59,6 +59,40 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Config env var overrides
+# ---------------------------------------------------------------------------
+
+_ENV_PREFIX = "RADIO_CAPTURE_IMPORTER_"
+
+# Maps env var suffix → (config_key, optional_coerce_fn)
+_ENV_MAP: dict[str, tuple[str, "Callable | None"]] = {  # type: ignore[name-defined]
+    "SERVER_URL": ("server_url", None),
+    "API_KEY": ("api_key", None),
+    "WATCH_DIR": ("watch_dir", None),
+    "DELETE_AFTER_UPLOAD": ("delete_after_upload", lambda v: v.lower() in ("1", "true", "yes")),
+    "USE_PRESIGN": ("use_presign", lambda v: v.lower() in ("1", "true", "yes")),
+    "LOG_LEVEL": ("log_level", None),
+    "RETRY_INTERVAL_MINUTES": ("retry_interval_minutes", int),
+    "MAX_AGE_HOURS": ("max_age_hours", int),
+    "UPLOAD_WORKERS": ("upload_workers", int),
+    "STATE_FILE": ("state_file", None),
+    "RTL_CONFIG": ("rtl_config", None),
+}
+
+
+def apply_env_overrides(config: dict) -> dict:
+    """Apply RADIO_CAPTURE_IMPORTER_* environment variables on top of the loaded config."""
+    applied: list[str] = []
+    for suffix, (key, coerce) in _ENV_MAP.items():
+        val = os.environ.get(_ENV_PREFIX + suffix)
+        if val is not None:
+            config[key] = coerce(val) if coerce else val
+            applied.append(f"{_ENV_PREFIX + suffix}={val!r}")
+    if applied:
+        logger.debug("Applied env overrides: %s", ", ".join(applied))
+    return config
+
 # Matches: {template}_{YYYYMMDD}_{HHMMSS}_{freq_hz}.{ext}
 FILENAME_WITH_FREQ = re.compile(
     r"^(?P<template>.+)_(?P<date>\d{8})_(?P<time>\d{6})_(?P<freq>\d+)\.(?P<ext>mp3|ogg|wav|m4a|aac)$",
@@ -176,8 +210,11 @@ class WorkQueue:
 
 class FileProcessor:
     """
-    Resolves a filepath to a channel and uploads it. Intended to be called
+    Resolves a filepath to a channel label and uploads it. Intended to be called
     from a worker thread via WorkQueue.
+
+    Channel lookup and optional auto-creation are handled server-side; the importer
+    passes the channel label (name) directly in the upload request.
     """
 
     def __init__(
@@ -185,14 +222,11 @@ class FileProcessor:
         config: dict,
         uploader: Uploader,
         lookup: dict[tuple[str, int | None], ChannelEntry],
-        label_to_channel_id: dict[str, str],
         state_db: StateDB | None,
     ):
         self.uploader = uploader
         self.lookup = lookup
-        self.label_to_channel_id = label_to_channel_id
         self.state_db = state_db
-        self.auto_create = config.get("auto_create_channels", False)
         self.delete_after = config.get("delete_after_upload", False)
         self.use_presign = config.get("use_presign", False)
         transcription_cfg = config.get("transcription", {})
@@ -218,11 +252,6 @@ class FileProcessor:
 
         validate_mtime(filepath, recorded_at)
 
-        channel_id = self._resolve_channel(entry.label)
-        if channel_id is None:
-            logger.warning("No channel for label '%s' — skipping %s", entry.label, filename)
-            return
-
         transcript: str | None = None
         if self.transcriber is not None:
             try:
@@ -233,12 +262,12 @@ class FileProcessor:
 
         if self.use_presign:
             transmission_id = self.uploader.upload_file(
-                filepath, channel_id, recorded_at=recorded_at, frequency_hz=entry.freq_hz,
+                filepath, entry.label, recorded_at=recorded_at, frequency_hz=entry.freq_hz,
                 transcript=transcript,
             )
         else:
             transmission_id = self.uploader.upload_direct(
-                filepath, channel_id, recorded_at=recorded_at, frequency_hz=entry.freq_hz,
+                filepath, entry.label, recorded_at=recorded_at, frequency_hz=entry.freq_hz,
                 transcript=transcript,
             )
 
@@ -251,20 +280,6 @@ class FileProcessor:
                     logger.info("Deleted local file: %s", filename)
                 except OSError as e:
                     logger.warning("Failed to delete %s: %s", filename, e)
-
-    def _resolve_channel(self, label: str) -> str | None:
-        """Return channel_id for label, creating the channel if auto_create is on."""
-        if label in self.label_to_channel_id:
-            return self.label_to_channel_id[label]
-
-        if not self.auto_create:
-            return None
-
-        channel_id = self.uploader.create_channel(label)
-        if channel_id:
-            self.label_to_channel_id[label] = channel_id
-            logger.info("Auto-created channel '%s' → %s", label, channel_id)
-        return channel_id
 
 
 # ---------------------------------------------------------------------------
@@ -341,29 +356,6 @@ def retry_scan(
 
 
 # ---------------------------------------------------------------------------
-# Station bootstrap
-# ---------------------------------------------------------------------------
-
-def fetch_station(uploader: Uploader, retries: int = 5, delay: float = 5.0) -> dict:
-    """Fetch station info with retries. Exits on permanent failure."""
-    for attempt in range(1, retries + 1):
-        result = uploader.get_station()
-        if result is not None:
-            return result
-        if attempt < retries:
-            logger.warning(
-                "Station fetch failed (attempt %d/%d), retrying in %.0fs…",
-                attempt, retries, delay,
-            )
-            time.sleep(delay)
-    logger.error(
-        "Could not fetch station info after %d attempts — check server_url and api_key",
-        retries,
-    )
-    sys.exit(1)
-
-
-# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -378,7 +370,9 @@ def main() -> None:
         sys.exit(1)
 
     with open(config_path) as f:
-        config = yaml.safe_load(f)
+        config = yaml.safe_load(f) or {}
+
+    config = apply_env_overrides(config)
 
     log_level = config.get("log_level", "INFO").upper()
     logging.getLogger().setLevel(getattr(logging, log_level, logging.INFO))
@@ -432,20 +426,9 @@ def main() -> None:
 
     uploader = Uploader(server_url, api_key)
 
-    # Fetch system info and build label → channel_id map
-    station = fetch_station(uploader)
-    system_name = station["system"]["name"]
-    label_to_channel_id: dict[str, str] = {
-        ch["name"]: ch["id"] for ch in station.get("channels", [])
-    }
-    logger.info(
-        "Connected to system '%s' with %d channel(s)",
-        system_name, len(label_to_channel_id),
-    )
-
     # Wire up the work queue and processor
     max_workers = config.get("upload_workers", 4)
-    processor = FileProcessor(config, uploader, lookup, label_to_channel_id, state_db)
+    processor = FileProcessor(config, uploader, lookup, state_db)
     work_queue = WorkQueue(processor, max_workers=max_workers)
     work_queue.start()
 

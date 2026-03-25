@@ -38,6 +38,10 @@ RUN apk add --no-cache ffmpeg
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 
+# Convenience alias: docker exec <container> rcv-seed <command> [args...]
+RUN printf '#!/bin/sh\nexec node /app/dist/server/server/scripts/seed.js "$@"\n' \
+    > /usr/local/bin/rcv-seed && chmod +x /usr/local/bin/rcv-seed
+
 EXPOSE 3000
 
 CMD ["node", "dist/server/server/index.js"]

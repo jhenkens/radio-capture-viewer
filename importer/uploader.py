@@ -16,54 +16,13 @@ class Uploader:
         self.session.headers.update({"x-api-key": api_key})
 
     # ------------------------------------------------------------------
-    # Station / channel helpers
-    # ------------------------------------------------------------------
-
-    def get_station(self) -> dict | None:
-        """
-        Fetch system info and channel list for the authenticated API key.
-        Returns the parsed JSON dict or None on failure.
-        """
-        try:
-            resp = self.session.get(
-                f"{self.server_url}/api/admin/station",
-                timeout=15,
-            )
-            resp.raise_for_status()
-            return resp.json()
-        except requests.RequestException as e:
-            logger.error("Failed to fetch station info: %s", e)
-            return None
-
-    def create_channel(self, name: str, description: str | None = None) -> str | None:
-        """
-        Find or create a channel by name under the authenticated system.
-        Returns the channel_id on success, None on failure.
-        """
-        payload: dict = {"name": name}
-        if description:
-            payload["description"] = description
-
-        try:
-            resp = self.session.post(
-                f"{self.server_url}/api/admin/channels",
-                json=payload,
-                timeout=15,
-            )
-            resp.raise_for_status()
-            return resp.json()["id"]
-        except requests.RequestException as e:
-            logger.error("Failed to create channel '%s': %s", name, e)
-            return None
-
-    # ------------------------------------------------------------------
     # Upload flows
     # ------------------------------------------------------------------
 
     def upload_file(
         self,
         filepath: str,
-        channel_id: str,
+        channel_name: str,
         recorded_at: int | None = None,
         duration_ms: int | None = None,
         frequency_hz: int | None = None,
@@ -78,7 +37,7 @@ class Uploader:
 
         # Step 1: Initiate
         payload: dict = {
-            "channel_id": channel_id,
+            "channel_name": channel_name,
             "filename": filename,
             "content_type": content_type,
         }
@@ -148,7 +107,7 @@ class Uploader:
     def upload_direct(
         self,
         filepath: str,
-        channel_id: str,
+        channel_name: str,
         recorded_at: int | None = None,
         duration_ms: int | None = None,
         frequency_hz: int | None = None,
@@ -165,7 +124,7 @@ class Uploader:
         try:
             with open(filepath, "rb") as f:
                 form_data: dict = {
-                    "channel_id": channel_id,
+                    "channel_name": channel_name,
                     "content_type": content_type,
                 }
                 if recorded_at is not None:

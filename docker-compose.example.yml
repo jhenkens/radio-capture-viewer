@@ -25,20 +25,41 @@ services:
       # - WHISPER_API_KEY=sk-...
       # - WHISPER_MODEL=gpt-4o-transcribe
       # - WHISPER_PROMPT=...
+      # Allow the importer to trigger creation of new channels by name:
+      # - CHANNELS_AUTO_CREATE=true
     restart: unless-stopped
 
   importer:
     build: ./importer
     volumes:
-      # config.yaml must exist at this path on the host
-      - ./importer/config.yaml:/config/config.yaml:ro
+      # Optional: mount a custom config file (otherwise the baked-in defaults + env vars are used)
+      # - ./importer/config.yaml:/config/config.yaml:ro
       # Mount the directory where rtl-airband writes audio files
       - /path/to/recordings:/recordings
-      # Optional: mount rtl-airband config(s) for channel mapping
-      # - /etc/rtlsdr-airband.conf:/etc/rtlsdr-airband.conf:ro
+      # Mount rtl-airband config(s) for channel mapping
+      - /etc/rtlsdr-airband.conf:/etc/rtlsdr-airband.conf:ro
+    environment:
+      - RADIO_CAPTURE_IMPORTER_SERVER_URL=http://app:3000
+      - RADIO_CAPTURE_IMPORTER_API_KEY=rcv_your_key_here
+      - RADIO_CAPTURE_IMPORTER_RTL_CONFIG=/etc/rtlsdr-airband.conf
     restart: unless-stopped
     depends_on:
       - app
+
+  # Optional: transcriber sidecar (single-threaded faster-whisper)
+  # transcriber:
+  #   image: johhenkens/radio-capture-viewer:transcriber-latest
+  #   environment:
+  #     - API_KEY=change-me
+  #     - WHISPER_MODEL=small.en
+  #     # - DEVICE=cpu
+  #     # - COMPUTE_TYPE=int8
+  #   volumes:
+  #     - hf-cache:/app/hf-cache
+  #   restart: unless-stopped
+  # Then point the app at it:
+  #   WHISPER_BASE_URL=http://transcriber:8000
+  #   WHISPER_API_KEY=change-me
 
   # Optional: speaches.ai sidecar for local transcription
   # speaches:

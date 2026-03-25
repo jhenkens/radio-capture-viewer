@@ -13,7 +13,7 @@ import crypto from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import { initConfig } from "../config/index.js";
 import { getDb, schema } from "../db/index.js";
-import { eq, isNull, gt } from "drizzle-orm";
+import { and, eq, isNull, gt, inArray, desc } from "drizzle-orm";
 
 function hashKey(key: string): string {
   return crypto.createHash("sha256").update(key).digest("hex");
@@ -44,6 +44,43 @@ async function createChannel(systemId: string, name: string, description?: strin
   console.log(`Created channel: ${name}`);
   console.log(`  ID: ${id}`);
 }
+
+async function setWhisperField(
+  field: "whisper_prompt" | "whisper_hotwords",
+  systemId: string,
+  value: string | null,
+  channelId?: string
+): Promise<void> {
+  const db = getDb();
+
+  if (channelId) {
+    const ch = await db.select().from(schema.channels).where(eq(schema.channels.id, channelId));
+    if (!ch.length) {
+      console.error(`Channel not found: ${channelId}`);
+      process.exit(1);
+    }
+    if (ch[0]!.system_id !== systemId) {
+      console.error(`Channel ${channelId} does not belong to system ${systemId}`);
+      process.exit(1);
+    }
+    await db.update(schema.channels).set({ [field]: value }).where(eq(schema.channels.id, channelId));
+    console.log(`Set ${field} on channel ${channelId} (${ch[0]!.name}): ${value ?? "(cleared)"}`);
+  } else {
+    const sys = await db.select().from(schema.systems).where(eq(schema.systems.id, systemId));
+    if (!sys.length) {
+      console.error(`System not found: ${systemId}`);
+      process.exit(1);
+    }
+    await db.update(schema.systems).set({ [field]: value }).where(eq(schema.systems.id, systemId));
+    console.log(`Set ${field} on system ${systemId} (${sys[0]!.name}): ${value ?? "(cleared)"}`);
+  }
+}
+
+const setPrompt = (systemId: string, value: string | null, channelId?: string) =>
+  setWhisperField("whisper_prompt", systemId, value, channelId);
+
+const setHotwords = (systemId: string, value: string | null, channelId?: string) =>
+  setWhisperField("whisper_hotwords", systemId, value, channelId);
 
 async function createApiKey(systemId: string, keyName: string): Promise<void> {
   const db = getDb();
@@ -110,50 +147,75 @@ async function backfillAnalyzeTasks(): Promise<void> {
   console.log("All analyze_file tasks reset to complete=false — they will rerun on next poll.");
 }
 
-async function backfillWhisperTasks(): Promise<void> {
+async function backfillWhisperTasks(limit?: number): Promise<void> {
   const db = getDb();
   const now = Date.now();
 
-  // Reset all existing whisper tasks so they rerun immediately
+  // When a limit is given, scope everything to the N most-recent transmissions.
+  let scopedIds: string[] | undefined;
+  if (limit !== undefined) {
+    const recent = await db
+      .select({ id: schema.transmissions.id })
+      .from(schema.transmissions)
+      .orderBy(desc(schema.transmissions.recorded_at))
+      .limit(limit);
+    scopedIds = recent.map((r) => r.id);
+    if (!scopedIds.length) {
+      console.log("No transmissions found.");
+      return;
+    }
+    console.log(`Scoping to the ${scopedIds.length} most-recent transmission(s).`);
+  }
+
+  let whereClause: any = eq(schema.tasks.type, "whisper");
+  if (scopedIds) {
+    whereClause = and(whereClause, inArray(schema.tasks.transmission_id, scopedIds));
+  }
+
+
+  // Reset existing whisper tasks in scope so they rerun immediately.
   await db
     .update(schema.tasks)
     .set({ complete: false, processing_start_time: null, processing_end_time: null, failure_count: 0 })
-    .where(eq(schema.tasks.type, "whisper"));
+    .where(whereClause);
 
-  // Insert whisper tasks only for transmissions that don't have one yet
+  // Insert whisper tasks for transmissions in scope that don't have one yet.
   const whisperTaskAlias = db
     .select({ transmission_id: schema.tasks.transmission_id })
     .from(schema.tasks)
     .where(eq(schema.tasks.type, "whisper"))
     .as("wt");
 
+  let transmissionsWhereClause: any = isNull(whisperTaskAlias.transmission_id);
+  if (scopedIds) {
+    transmissionsWhereClause = and(transmissionsWhereClause, inArray(schema.transmissions.id, scopedIds));
+  }
+
   const rows = await db
     .select({ id: schema.transmissions.id })
     .from(schema.transmissions)
     .leftJoin(whisperTaskAlias, eq(whisperTaskAlias.transmission_id, schema.transmissions.id))
-    .where(isNull(whisperTaskAlias.transmission_id));
+    .where(transmissionsWhereClause);
 
-  if (!rows.length) {
-    console.log("All transmissions already have a whisper task.");
-    return;
+  if (rows.length) {
+    const tasks = rows.map((row) => ({
+      id: uuidv4(),
+      transmission_id: row.id,
+      type: "whisper",
+      required: true,
+      complete: false,
+      processing_start_time: null,
+      processing_end_time: null,
+      failure_count: 0,
+      retry_limit: 3,
+      retry_delay_ms: 30_000,
+      created_at: now,
+    }));
+    await db.insert(schema.tasks).values(tasks);
+    console.log(`Created ${tasks.length} whisper task(s).`);
   }
 
-  const tasks = rows.map((row) => ({
-    id: uuidv4(),
-    transmission_id: row.id,
-    type: "whisper",
-    required: true,
-    complete: false,
-    processing_start_time: null,
-    processing_end_time: null,
-    failure_count: 0,
-    retry_limit: 3,
-    retry_delay_ms: 30_000,
-    created_at: now,
-  }));
-
-  await db.insert(schema.tasks).values(tasks);
-  console.log(`Created ${tasks.length} whisper task(s).`);
+  console.log("Done — whisper tasks will rerun on next poll.");
 }
 
 async function clearTranscripts(): Promise<void> {
@@ -201,12 +263,17 @@ async function list(): Promise<void> {
   for (const sys of systems) {
     console.log(`  [${sys.id}] ${sys.name}`);
 
+    if (sys.whisper_prompt) console.log(`    whisper_prompt: ${sys.whisper_prompt}`);
+    if (sys.whisper_hotwords) console.log(`    whisper_hotwords: ${sys.whisper_hotwords}`);
+
     const channels = await db
       .select()
       .from(schema.channels)
       .where(eq(schema.channels.system_id, sys.id));
     for (const ch of channels) {
       console.log(`    Channel: [${ch.id}] ${ch.name}`);
+      if (ch.whisper_prompt) console.log(`      whisper_prompt: ${ch.whisper_prompt}`);
+      if (ch.whisper_hotwords) console.log(`      whisper_hotwords: ${ch.whisper_hotwords}`);
     }
 
     const keys = await db
@@ -226,10 +293,18 @@ async function main(): Promise<void> {
   const command = args[0];
 
   const flags: Record<string, string> = {};
-  for (let i = 1; i < args.length; i += 2) {
-    const key = args[i]?.replace(/^--/, "").replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
-    if (key && args[i + 1]) {
-      flags[key] = args[i + 1]!;
+  for (let i = 1; i < args.length; ) {
+    const raw = args[i];
+    if (!raw?.startsWith("--")) { i++; continue; }
+    const key = raw.replace(/^--/, "").replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+    const next = args[i + 1];
+    if (!next || next.startsWith("--")) {
+      // Boolean flag
+      flags[key] = "true";
+      i++;
+    } else {
+      flags[key] = next;
+      i += 2;
     }
   }
 
@@ -267,7 +342,7 @@ async function main(): Promise<void> {
       break;
 
     case "backfill-whisper-tasks":
-      await backfillWhisperTasks();
+      await backfillWhisperTasks(flags["limit"] ? parseInt(flags["limit"]!, 10) : undefined);
       break;
 
     case "retry-failed-tasks":
@@ -278,14 +353,52 @@ async function main(): Promise<void> {
       await clearTranscripts();
       break;
 
+    case "set-prompt":
+      if (!flags["systemId"]) {
+        console.error("Usage: seed set-prompt --system-id <id> [--channel-id <id>] --prompt <text>");
+        console.error("       seed set-prompt --system-id <id> [--channel-id <id>] --clear");
+        process.exit(1);
+      }
+      if (flags["clear"] === "true") {
+        await setPrompt(flags["systemId"]!, null, flags["channelId"]);
+      } else if (flags["prompt"] !== undefined) {
+        await setPrompt(flags["systemId"]!, flags["prompt"]!, flags["channelId"]);
+      } else {
+        console.error("Usage: seed set-prompt --system-id <id> [--channel-id <id>] --prompt <text>");
+        console.error("       seed set-prompt --system-id <id> [--channel-id <id>] --clear");
+        process.exit(1);
+      }
+      break;
+
+    case "set-hotwords":
+      if (!flags["systemId"]) {
+        console.error("Usage: seed set-hotwords --system-id <id> [--channel-id <id>] --hotwords <word1,word2,...>");
+        console.error("       seed set-hotwords --system-id <id> [--channel-id <id>] --clear");
+        process.exit(1);
+      }
+      if (flags["clear"] === "true") {
+        await setHotwords(flags["systemId"]!, null, flags["channelId"]);
+      } else if (flags["hotwords"] !== undefined) {
+        await setHotwords(flags["systemId"]!, flags["hotwords"]!, flags["channelId"]);
+      } else {
+        console.error("Usage: seed set-hotwords --system-id <id> [--channel-id <id>] --hotwords <word1,word2,...>");
+        console.error("       seed set-hotwords --system-id <id> [--channel-id <id>] --clear");
+        process.exit(1);
+      }
+      break;
+
     default:
       console.log("Commands:");
       console.log("  create-system --name <name> [--description <desc>]");
       console.log("  create-channel --system-id <id> --name <name> [--description <desc>]");
       console.log("  create-api-key --system-id <id> --name <name>");
       console.log("  list");
+      console.log("  set-prompt --system-id <id> [--channel-id <id>] --prompt <text>");
+      console.log("  set-prompt --system-id <id> [--channel-id <id>] --clear");
+      console.log("  set-hotwords --system-id <id> [--channel-id <id>] --hotwords <word1,word2,...>");
+      console.log("  set-hotwords --system-id <id> [--channel-id <id>] --clear");
       console.log("  backfill-analyze-tasks");
-      console.log("  backfill-whisper-tasks");
+      console.log("  backfill-whisper-tasks [--limit <n>]");
       console.log("  retry-failed-tasks [--type <task-type>]");
       console.log("  clear-transcripts");
   }

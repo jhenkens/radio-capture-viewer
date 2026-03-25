@@ -51,7 +51,8 @@ async function main() {
 
   if (config.whisper.enabled) {
     taskRunner.registerProcessor(
-      new WhisperProcessor(config.whisper.baseUrl, config.whisper.apiKey, config.whisper.model, config.whisper.prompt, config.whisper.responseFormat)
+      new WhisperProcessor(config.whisper.baseUrl, config.whisper.apiKey, config.whisper.model, config.whisper.prompt, config.whisper.hotwords, config.whisper.responseFormat),
+      config.whisper.concurrency
     );
   }
 

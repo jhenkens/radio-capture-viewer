@@ -11,6 +11,8 @@ export const systems = sqliteTable("systems", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
+  whisper_prompt: text("whisper_prompt"),
+  whisper_hotwords: text("whisper_hotwords"),
   created_at: integer("created_at").notNull(),
 });
 
@@ -34,6 +36,8 @@ export const channels = sqliteTable(
       .references(() => systems.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     description: text("description"),
+    whisper_prompt: text("whisper_prompt"),
+    whisper_hotwords: text("whisper_hotwords"),
     created_at: integer("created_at").notNull(),
   },
   (t) => ({

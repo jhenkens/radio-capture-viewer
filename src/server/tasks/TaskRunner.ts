@@ -1,5 +1,5 @@
 import { EventEmitter } from "events";
-import { eq, and, lt, isNull, or, ne, asc, lte } from "drizzle-orm";
+import { eq, and, lt, isNull, or, ne, asc, lte, notInArray } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import type { DB } from "../db/index.js";
 import type { FileCache } from "../cache/FileCache.js";
@@ -23,6 +23,8 @@ function backoffMs(failureCount: number): number {
 
 export class TaskRunner extends EventEmitter {
   private readonly processors = new Map<string, TaskProcessor>();
+  private readonly concurrencyByType = new Map<string, number>();
+  private readonly activeCountByType = new Map<string, number>();
   private activeCount = 0;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
@@ -37,8 +39,11 @@ export class TaskRunner extends EventEmitter {
     super();
   }
 
-  registerProcessor(processor: TaskProcessor): void {
+  registerProcessor(processor: TaskProcessor, concurrency?: number): void {
     this.processors.set(processor.type, processor);
+    if (concurrency !== undefined) {
+      this.concurrencyByType.set(processor.type, concurrency);
+    }
   }
 
   start(): void {
@@ -75,7 +80,12 @@ export class TaskRunner extends EventEmitter {
     if (!this.running) return;
 
     while (this.activeCount < this.concurrency) {
-      const task = await this.claimNextTask();
+      // Types whose per-processor concurrency limit is currently reached
+      const saturatedTypes = [...this.concurrencyByType.entries()]
+        .filter(([type, limit]) => (this.activeCountByType.get(type) ?? 0) >= limit)
+        .map(([type]) => type);
+
+      const task = await this.claimNextTask(saturatedTypes);
       if (!task) break;
       this.runTask(task).catch((err) =>
         console.error("[TaskRunner] Task error:", task.id, err)
@@ -85,11 +95,12 @@ export class TaskRunner extends EventEmitter {
     this.schedulePoll(POLL_INTERVAL_MS);
   }
 
-  private async claimNextTask(): Promise<(typeof schema.tasks.$inferSelect) | null> {
+  private async claimNextTask(saturatedTypes: string[]): Promise<(typeof schema.tasks.$inferSelect) | null> {
     const now = Date.now();
     const timeoutThreshold = now - TASK_TIMEOUT_MS;
 
-    // Find a pending task: not complete, under retry limit, not being processed (or timed out)
+    // Find a pending task: not complete, under retry limit, not being processed (or timed out),
+    // and not of a type that has reached its per-processor concurrency limit.
     const pending = await this.db
       .select()
       .from(schema.tasks)
@@ -104,7 +115,8 @@ export class TaskRunner extends EventEmitter {
           or(
             isNull(schema.tasks.retry_after),
             lte(schema.tasks.retry_after, now)
-          )
+          ),
+          saturatedTypes.length ? notInArray(schema.tasks.type, saturatedTypes) : undefined
         )
       )
       .orderBy(asc(schema.tasks.created_at))
@@ -125,6 +137,7 @@ export class TaskRunner extends EventEmitter {
 
   private async runTask(task: typeof schema.tasks.$inferSelect): Promise<void> {
     this.activeCount++;
+    this.activeCountByType.set(task.type, (this.activeCountByType.get(task.type) ?? 0) + 1);
     try {
       const processor = this.processors.get(task.type);
       if (!processor) {
@@ -168,6 +181,7 @@ export class TaskRunner extends EventEmitter {
       await this.failTask(task, String(err));
     } finally {
       this.activeCount--;
+      this.activeCountByType.set(task.type, (this.activeCountByType.get(task.type) ?? 1) - 1);
       // Wake up to process more tasks
       if (this.running) {
         this.schedulePoll(0);

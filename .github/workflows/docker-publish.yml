@@ -72,3 +72,25 @@ jobs:
           labels: ${{ steps.meta-importer.outputs.labels }}
           cache-from: type=gha,scope=importer
           cache-to: type=gha,mode=max,scope=importer
+
+      - name: Docker meta (transcriber)
+        id: meta-transcriber
+        uses: docker/metadata-action@v5
+        with:
+          images: "${{ env.DOCKER_OWNER }}/${{ github.event.repository.name }}"
+          tags: |
+            type=raw,value=transcriber-latest,enable={{is_default_branch}}
+            type=semver,pattern=transcriber-{{version}}
+            type=semver,pattern=transcriber-{{major}}.{{minor}}
+            type=semver,pattern=transcriber-{{major}}
+
+      - name: Build and push transcriber
+        uses: docker/build-push-action@v6
+        with:
+          context: ./transcriber
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta-transcriber.outputs.tags }}
+          labels: ${{ steps.meta-transcriber.outputs.labels }}
+          cache-from: type=gha,scope=transcriber
+          cache-to: type=gha,mode=max,scope=transcriber

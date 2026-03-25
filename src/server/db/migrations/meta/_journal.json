@@ -22,6 +22,20 @@
       "when": 1774068231453,
       "tag": "0002_stormy_changeling",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1774459605980,
+      "tag": "0003_lumpy_shotgun",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1774461736655,
+      "tag": "0004_bouncy_marten_broadcloak",
+      "breakpoints": true
     }
   ]
 }
