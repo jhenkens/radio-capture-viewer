@@ -175,7 +175,7 @@ export class TaskRunner extends EventEmitter {
       console.info(`[TaskRunner] Completed task ${task.id} type=${task.type}`);
 
       // Check if all required tasks for this transmission are complete
-      await this.checkTransmissionComplete(task.transmission_id);
+      await this.checkTransmissionComplete(task);
     } catch (err) {
       console.error(`[TaskRunner] Task ${task.id} failed:`, err);
       await this.failTask(task, String(err));
@@ -206,7 +206,9 @@ export class TaskRunner extends EventEmitter {
     console.info(`[TaskRunner] Failed task ${task.id} type=${task.type} (attempt ${newCount}/${task.retry_limit}): ${reason} — retry after ${new Date(retryAfter).toISOString()}`);
   }
 
-  private async checkTransmissionComplete(transmissionId: string): Promise<void> {
+  private async checkTransmissionComplete(task: typeof schema.tasks.$inferSelect): Promise<void> {
+    const transmissionId = task.transmission_id;
+
     // Get all required tasks for this transmission
     const allRequired = await this.db
       .select()
@@ -236,6 +238,21 @@ export class TaskRunner extends EventEmitter {
         channel_id: tx.channel_id,
         transmission_id: tx.id,
       });
+    } else if (!task.required) {
+      // Non-required task (e.g. whisper) completed after the transmission was already available.
+      // Re-fetch and emit so connected clients receive the updated data (e.g. new transcript).
+      const txRows = await this.db
+        .select()
+        .from(schema.transmissions)
+        .where(and(eq(schema.transmissions.id, transmissionId), eq(schema.transmissions.available, true)));
+      if (txRows.length) {
+        const tx = txRows[0]!;
+        this.notifications.emitTransmissionAvailable({
+          system_id: tx.system_id,
+          channel_id: tx.channel_id,
+          transmission_id: tx.id,
+        });
+      }
     }
   }
 }

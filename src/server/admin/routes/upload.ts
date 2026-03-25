@@ -395,7 +395,7 @@ async function createTasksOrMarkAvailable(
       id: uuidv4(),
       transmission_id: transmissionId,
       type: "whisper",
-      required: true,
+      required: false,
       complete: false,
       processing_start_time: null,
       processing_end_time: null,

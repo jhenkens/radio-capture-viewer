@@ -227,17 +227,37 @@ async function clearTranscripts(): Promise<void> {
   console.log(`Cleared transcripts on ${result.length} transmission(s).`);
 }
 
-async function retryFailedTasks(type?: string): Promise<void> {
+async function retryFailedTasks(opts: { type?: string; limit?: number; since?: number }): Promise<void> {
   const db = getDb();
+  const { type, limit, since } = opts;
 
-  const where = type
-    ? eq(schema.tasks.type, type)
-    : gt(schema.tasks.failure_count, 0);
+  // Build filter: failed tasks optionally scoped by type and/or creation time
+  let whereClause: any = and(gt(schema.tasks.failure_count, 0), eq(schema.tasks.complete, false));
+  if (type) whereClause = and(whereClause, eq(schema.tasks.type, type));
+  if (since !== undefined) whereClause = and(whereClause, gt(schema.tasks.created_at, since));
+
+  // When a limit is specified, find the N most-recently-created matching task IDs first
+  let ids: string[] | undefined;
+  if (limit !== undefined) {
+    const rows = await db
+      .select({ id: schema.tasks.id })
+      .from(schema.tasks)
+      .where(whereClause)
+      .orderBy(desc(schema.tasks.created_at))
+      .limit(limit);
+    ids = rows.map((r) => r.id);
+    if (!ids.length) {
+      console.log("No failed tasks found.");
+      return;
+    }
+    console.log(`Scoping to the ${ids.length} most-recent failed task(s).`);
+    whereClause = inArray(schema.tasks.id, ids);
+  }
 
   const result = await db
     .update(schema.tasks)
     .set({ failure_count: 0, processing_start_time: null, processing_end_time: null, retry_after: null })
-    .where(where)
+    .where(whereClause)
     .returning({ id: schema.tasks.id, type: schema.tasks.type });
 
   if (!result.length) {
@@ -345,9 +365,23 @@ async function main(): Promise<void> {
       await backfillWhisperTasks(flags["limit"] ? parseInt(flags["limit"]!, 10) : undefined);
       break;
 
-    case "retry-failed-tasks":
-      await retryFailedTasks(flags["type"]);
+    case "retry-failed-tasks": {
+      let sinceMs: number | undefined;
+      if (flags["since"] !== undefined) {
+        const parsed = Date.parse(flags["since"]!);
+        if (isNaN(parsed)) {
+          console.error(`Invalid --since value: ${flags["since"]} (use ISO date or Unix ms timestamp)`);
+          process.exit(1);
+        }
+        sinceMs = parsed;
+      }
+      await retryFailedTasks({
+        type: flags["type"],
+        limit: flags["limit"] ? parseInt(flags["limit"]!, 10) : undefined,
+        since: sinceMs,
+      });
       break;
+    }
 
     case "clear-transcripts":
       await clearTranscripts();
@@ -399,7 +433,7 @@ async function main(): Promise<void> {
       console.log("  set-hotwords --system-id <id> [--channel-id <id>] --clear");
       console.log("  backfill-analyze-tasks");
       console.log("  backfill-whisper-tasks [--limit <n>]");
-      console.log("  retry-failed-tasks [--type <task-type>]");
+      console.log("  retry-failed-tasks [--type <task-type>] [--limit <n>] [--since <ISO-date>]");
       console.log("  clear-transcripts");
   }
 }
