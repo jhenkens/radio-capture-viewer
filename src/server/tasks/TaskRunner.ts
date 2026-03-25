@@ -209,43 +209,47 @@ export class TaskRunner extends EventEmitter {
   private async checkTransmissionComplete(task: typeof schema.tasks.$inferSelect): Promise<void> {
     const transmissionId = task.transmission_id;
 
-    // Get all required tasks for this transmission
-    const allRequired = await this.db
-      .select()
+    // If any required task is still incomplete, nothing to do yet.
+    const incompleteRequired = await this.db
+      .select({ id: schema.tasks.id })
       .from(schema.tasks)
       .where(
         and(
           eq(schema.tasks.transmission_id, transmissionId),
-          eq(schema.tasks.required, true)
+          eq(schema.tasks.required, true),
+          eq(schema.tasks.complete, false)
         )
       );
 
-    const allComplete = allRequired.every((t) => t.complete);
-    if (!allComplete) return;
+    if (incompleteRequired.length > 0) return;
 
-    // Mark transmission as available (only if not already — avoids duplicate WS notifications
-    // when backfilled tasks complete for transmissions that were available before the pipeline existed)
+    // All required tasks done — mark available if not already.
     const updated = await this.db
       .update(schema.transmissions)
       .set({ available: true })
-      .where(and(eq(schema.transmissions.id, transmissionId), ne(schema.transmissions.available, true)))
+      .where(and(eq(schema.transmissions.id, transmissionId), eq(schema.transmissions.available, false)))
       .returning();
 
     if (updated.length > 0) {
+      // Transmission just became available.
       const tx = updated[0]!;
       this.notifications.emitTransmissionAvailable({
         system_id: tx.system_id,
         channel_id: tx.channel_id,
         transmission_id: tx.id,
       });
-    } else if (!task.required) {
-      // Non-required task (e.g. whisper) completed after the transmission was already available.
-      // Re-fetch and emit so connected clients receive the updated data (e.g. new transcript).
+      return;
+    }
+
+    // Transmission was already available. If a non-required task (e.g. whisper) just finished,
+    // push an update so clients can refresh the transcript.
+    if (!task.required) {
       const txRows = await this.db
         .select()
         .from(schema.transmissions)
-        .where(and(eq(schema.transmissions.id, transmissionId), eq(schema.transmissions.available, true)));
-      if (txRows.length) {
+        .where(eq(schema.transmissions.id, transmissionId));
+
+      if (txRows.length && txRows[0]!.available) {
         const tx = txRows[0]!;
         this.notifications.emitTransmissionAvailable({
           system_id: tx.system_id,

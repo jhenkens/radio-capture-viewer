@@ -11,6 +11,7 @@ export interface TransmissionListData {
   lastScrollTime: number;
   currentQueryId: string | null;
   currentMoreQueryId: string | null;
+  timestampMode: 'datetime' | 'epoch' | 'id';
 
   init(): void;
   load(systemId: string, channelIds?: string[]): void;
@@ -18,6 +19,8 @@ export interface TransmissionListData {
   onReset(): void;
   handleQueryResult(result: { query_id: string; items: TransmissionDTO[]; next_cursor: number | null }): void;
   scrollToPlaying(): void;
+  cycleTimestampMode(): void;
+  formatTimestamp(tx: TransmissionDTO): string;
   formatTime(ts: number): string;
   formatDuration(ms: number | null): string;
 }
@@ -34,6 +37,7 @@ export function transmissionList(): TransmissionListData {
     lastScrollTime: 0,
     currentQueryId: null,
     currentMoreQueryId: null,
+    timestampMode: 'datetime' as 'datetime' | 'epoch' | 'id',
 
     init() {
       this.lastScrollTime = 0;
@@ -138,6 +142,18 @@ export function transmissionList(): TransmissionListData {
       if (!id) return;
       const el = document.querySelector(`[data-tx-id="${id}"]`);
       if (el) el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    },
+
+    cycleTimestampMode() {
+      const modes = ['datetime', 'epoch', 'id'] as const;
+      const next = (modes.indexOf(this.timestampMode) + 1) % modes.length;
+      this.timestampMode = modes[next]!;
+    },
+
+    formatTimestamp(tx: TransmissionDTO): string {
+      if (this.timestampMode === 'epoch') return Math.floor(tx.recorded_at / 1000).toString();
+      if (this.timestampMode === 'id') return tx.id;
+      return this.formatTime(tx.recorded_at);
     },
 
     formatTime(ts: number): string {

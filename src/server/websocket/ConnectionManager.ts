@@ -1,5 +1,5 @@
 import type WebSocket from "ws";
-import { eq, and, lt, gte, inArray, like, desc } from "drizzle-orm";
+import { eq, and, lt, gte, inArray, like, or, desc } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import type { DB } from "../db/index.js";
 import type { NotificationService, TransmissionAvailableEvent } from "../notifications/NotificationService.js";
@@ -93,7 +93,10 @@ export class ConnectionManager {
       conditions.push(inArray(schema.transmissions.channel_id, channel_ids));
     }
     if (search) {
-      conditions.push(like(schema.transmissions.transcript, `%${search}%`));
+      conditions.push(or(
+        like(schema.transmissions.transcript, `%${search}%`),
+        eq(schema.transmissions.id, search)
+      )!);
     }
     if (after !== undefined) {
       conditions.push(gte(schema.transmissions.recorded_at, after));

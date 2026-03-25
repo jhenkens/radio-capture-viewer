@@ -43,7 +43,7 @@ export class WhisperProcessor implements TaskProcessor {
 
     // Determine file extension from path
     const ext = file.path.split(".").pop() ?? "mp3";
-    const filename = `audio.${ext}`;
+    const filename = `${transmission.id}.${ext}`;
 
     // Fetch system + channel rows once for both prompt and hotwords
     const systemRows = await db
