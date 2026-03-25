@@ -61,7 +61,15 @@ async function main() {
   taskRunner.start();
 
   // Set up Fastify
-  const fastify = Fastify({ logger: true, trustProxy: config.trustProxy });
+  const fastify = Fastify({
+    logger: {
+      transport: {
+        target: "pino-pretty",
+        options: { translateTime: "SYS:yyyy-mm-dd HH:MM:ss", ignore: "pid,hostname" },
+      },
+    },
+    trustProxy: config.trustProxy,
+  });
 
   await fastify.register(cors, { origin: true });
   await fastify.register(multipart, {

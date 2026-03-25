@@ -30,7 +30,8 @@ export function audioPlayer(): AudioPlayerData {
       };
 
       this.audio.onloadedmetadata = () => {
-        this.audioDuration = this.audio!.duration || 0;
+        const d = this.audio!.duration;
+        this.audioDuration = isFinite(d) ? d : 0;
       };
 
       this.audio.onended = () => {
