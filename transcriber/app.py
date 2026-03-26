@@ -14,6 +14,7 @@ Optional env:
   DEVICE         cpu or cuda (default: cpu)
   COMPUTE_TYPE   int8 / float16 / float32 (default: int8)
   BEAM_SIZE      beam search width (default: 5)
+  VAD_FILTER     use Silero VAD to skip silent/non-voice audio (default: true)
   PORT           listen port (default: 8000)
   LOG_LEVEL      global log level: DEBUG / INFO / WARNING / ERROR (default: WARNING)
   APP_LOG_LEVEL  log level for this app: DEBUG / INFO / WARNING / ERROR (default: INFO)
@@ -32,6 +33,8 @@ from faster_whisper import WhisperModel
 
 log = logging.getLogger(__name__)
 
+NO_VOICES_TEXT = "<no voices detected>"
+
 
 # ---------------------------------------------------------------------------
 # Memory helper
@@ -48,12 +51,13 @@ def _rss_mb() -> float:
 # ---------------------------------------------------------------------------
 
 class TranscriberServer:
-    def __init__(self, api_key: str, model: WhisperModel, beam_size: int, port: int) -> None:
-        self.api_key   = api_key
-        self.model     = model
-        self.beam_size = beam_size
-        self.port      = port
-        self.app       = Flask(__name__)
+    def __init__(self, api_key: str, model: WhisperModel, beam_size: int, vad_filter: bool, port: int) -> None:
+        self.api_key    = api_key
+        self.model      = model
+        self.beam_size  = beam_size
+        self.vad_filter = vad_filter
+        self.port       = port
+        self.app        = Flask(__name__)
 
         self.app.add_url_rule(
             "/v1/audio/transcriptions",
@@ -106,18 +110,26 @@ class TranscriberServer:
                 audio.save(tmp)
                 tmp_path = tmp.name
 
-            kwargs = {"beam_size": self.beam_size}
+            kwargs = {"beam_size": self.beam_size, "vad_filter": self.vad_filter}
             if prompt:
                 kwargs["initial_prompt"] = prompt
             if hotwords:
                 kwargs["hotwords"] = hotwords
 
-            log.info("Transcribing %s (prompt=%s, hotwords=%s)", audio.filename, bool(prompt), bool(hotwords))
+            log.info(
+                "Transcribing %s (prompt=%s, hotwords=%s, vad=%s)",
+                audio.filename, bool(prompt), bool(hotwords), self.vad_filter,
+            )
             log.debug("  prompt:   %s", prompt)
             log.debug("  hotwords: %s", hotwords)
             segments, _ = self.model.transcribe(tmp_path, **kwargs)
             text = " ".join(seg.text.strip() for seg in segments)
-            log.info("Done: %s", text[:120] if text else "(empty)")
+
+            if not text.strip():
+                text = NO_VOICES_TEXT
+                log.info("No speech detected — returning %r", NO_VOICES_TEXT)
+            else:
+                log.info("Done: %s", text[:120])
         finally:
             if tmp_path:
                 os.unlink(tmp_path)
@@ -156,8 +168,8 @@ def configure_logging(global_level_name: str, app_level_name: str) -> None:
     warnings.filterwarnings("ignore", module="huggingface_hub.*")
 
 
-def load_config() -> tuple[str, str, str, str, int, int]:
-    """Read and validate env vars. Returns (api_key, model_name, device, compute_type, beam_size, port)."""
+def load_config() -> tuple[str, str, str, str, int, bool, int]:
+    """Read and validate env vars. Returns (api_key, model_name, device, compute_type, beam_size, vad_filter, port)."""
     api_key = os.environ.get("API_KEY", "")
     if not api_key:
         raise RuntimeError("API_KEY environment variable is required")
@@ -168,6 +180,7 @@ def load_config() -> tuple[str, str, str, str, int, int]:
         os.environ.get("DEVICE", "cpu"),
         os.environ.get("COMPUTE_TYPE", "int8"),
         int(os.environ.get("BEAM_SIZE", "5")),
+        os.environ.get("VAD_FILTER", "true").lower() not in ("false", "0", "no"),
         int(os.environ.get("PORT", "8000")),
     )
 
@@ -190,10 +203,11 @@ if __name__ == "__main__":
             os.environ.get("APP_LOG_LEVEL", "INFO"),
         )
 
-        api_key, model_name, device, compute_type, beam_size, port = load_config()
+        api_key, model_name, device, compute_type, beam_size, vad_filter, port = load_config()
+        log.info("VAD filter: %s", "enabled" if vad_filter else "disabled")
         model = load_model(model_name, device, compute_type)
 
-        TranscriberServer(api_key, model, beam_size, port).run()
+        TranscriberServer(api_key, model, beam_size, vad_filter, port).run()
 
     except RuntimeError as e:
         print(f"\nConfiguration error: {e}", file=sys.stderr)
