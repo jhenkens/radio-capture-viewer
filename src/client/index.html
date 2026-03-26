@@ -223,17 +223,21 @@
                     <a
                       :href="`/api/transmissions/${tx.id}/audio`"
                       :download="`${new Date(tx.recorded_at).toISOString().slice(0,19).replace('T','-').replace(/:/g,'-')}.mp3`"
-                      class="text-gray-600 group-hover:text-blue-400 text-xs w-6 h-6 flex items-center justify-center rounded hover:bg-gray-800 transition-colors"
+                      class="text-gray-600 group-hover:text-blue-400 w-6 h-6 flex items-center justify-center rounded hover:bg-gray-800 transition-colors"
                       @click.stop
                       title="Download"
-                    >⬇</a>
+                    >
+                      <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v9.586l2.293-2.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L9 12.586V3a1 1 0 011-1zM3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"/></svg>
+                    </a>
                     <button
-                      class="text-xs w-6 h-6 flex items-center justify-center rounded hover:bg-gray-800 transition-colors"
+                      class="w-6 h-6 flex items-center justify-center rounded hover:bg-gray-800 transition-colors"
                       :class="$store.app.playingId === tx.id ? 'text-red-400' : 'text-gray-600 group-hover:text-green-400'"
                       @click="$store.app.playingId === tx.id ? $dispatch('stop-playback') : $dispatch('play-transmission', tx)"
                       :title="$store.app.playingId === tx.id ? 'Stop' : 'Play'"
-                      x-text="$store.app.playingId === tx.id ? '⏹' : '▶'"
-                    ></button>
+                    >
+                      <svg x-show="$store.app.playingId === tx.id" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><rect x="4" y="4" width="12" height="12" rx="1"/></svg>
+                      <svg x-show="$store.app.playingId !== tx.id" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M6.3 2.841A1.5 1.5 0 004 4.11v11.78a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"/></svg>
+                    </button>
                   </div>
                 </div>
 
