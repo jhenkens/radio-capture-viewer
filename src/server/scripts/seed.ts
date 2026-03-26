@@ -147,7 +147,7 @@ async function backfillAnalyzeTasks(): Promise<void> {
   console.log("All analyze_file tasks reset to complete=false — they will rerun on next poll.");
 }
 
-async function backfillWhisperTasks(limit?: number): Promise<void> {
+async function backfillWhisperTasks(limit?: number, clearTranscripts = false): Promise<void> {
   const db = getDb();
   const now = Date.now();
 
@@ -172,6 +172,17 @@ async function backfillWhisperTasks(limit?: number): Promise<void> {
     whereClause = and(whereClause, inArray(schema.tasks.transmission_id, scopedIds));
   }
 
+
+  // Optionally clear existing transcripts so the WS push can be tested end-to-end.
+  if (clearTranscripts) {
+    let txWhere: any = scopedIds ? inArray(schema.transmissions.id, scopedIds) : undefined;
+    const cleared = await db
+      .update(schema.transmissions)
+      .set({ transcript: null })
+      .where(txWhere)
+      .returning({ id: schema.transmissions.id });
+    console.log(`Cleared transcripts on ${cleared.length} transmission(s).`);
+  }
 
   // Reset existing whisper tasks in scope so they rerun immediately.
   await db
@@ -362,7 +373,10 @@ async function main(): Promise<void> {
       break;
 
     case "backfill-whisper-tasks":
-      await backfillWhisperTasks(flags["limit"] ? parseInt(flags["limit"]!, 10) : undefined);
+      await backfillWhisperTasks(
+        flags["limit"] ? parseInt(flags["limit"]!, 10) : undefined,
+        flags["clear"] === "true"
+      );
       break;
 
     case "retry-failed-tasks": {
@@ -432,7 +446,7 @@ async function main(): Promise<void> {
       console.log("  set-hotwords --system-id <id> [--channel-id <id>] --hotwords <word1,word2,...>");
       console.log("  set-hotwords --system-id <id> [--channel-id <id>] --clear");
       console.log("  backfill-analyze-tasks");
-      console.log("  backfill-whisper-tasks [--limit <n>]");
+      console.log("  backfill-whisper-tasks [--limit <n>] [--clear]");
       console.log("  retry-failed-tasks [--type <task-type>] [--limit <n>] [--since <ISO-date>]");
       console.log("  clear-transcripts");
   }
