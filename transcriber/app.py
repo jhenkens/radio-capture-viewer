@@ -96,6 +96,13 @@ class TranscriberServer:
             return jsonify({"error": "Unauthorized"}), 401
 
         if "file" not in request.files:
+            log.warning(
+                "400 — missing 'file' in request.files. "
+                "content-type=%r files=%r form=%r",
+                request.content_type,
+                list(request.files.keys()),
+                {k: v for k, v in request.form.items()},
+            )
             return jsonify({"error": "file is required"}), 400
 
         audio    = request.files["file"]
