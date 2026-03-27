@@ -229,6 +229,69 @@ async function backfillWhisperTasks(limit?: number, clearTranscripts = false): P
   console.log("Done — whisper tasks will rerun on next poll.");
 }
 
+async function completeTask(transmissionId: string, type: string, transcript?: string): Promise<void> {
+  const db = getDb();
+  const now = Date.now();
+
+  const tx = await db.select().from(schema.transmissions).where(eq(schema.transmissions.id, transmissionId));
+  if (!tx.length) {
+    console.error(`Transmission not found: ${transmissionId}`);
+    process.exit(1);
+  }
+
+  const tasks = await db
+    .select()
+    .from(schema.tasks)
+    .where(and(eq(schema.tasks.transmission_id, transmissionId), eq(schema.tasks.type, type)));
+
+  if (!tasks.length) {
+    console.error(`No ${type} task found for transmission ${transmissionId}`);
+    process.exit(1);
+  }
+
+  await db
+    .update(schema.tasks)
+    .set({ complete: true, processing_start_time: now, processing_end_time: now, failure_count: 0 })
+    .where(and(eq(schema.tasks.transmission_id, transmissionId), eq(schema.tasks.type, type)));
+  console.log(`Marked ${tasks.length} ${type} task(s) as complete.`);
+
+  if (transcript !== undefined) {
+    await db
+      .update(schema.transmissions)
+      .set({ transcript })
+      .where(eq(schema.transmissions.id, transmissionId));
+    console.log(`Set transcript: ${transcript}`);
+  }
+
+  await db
+    .update(schema.transmissions)
+    .set({ available: true })
+    .where(eq(schema.transmissions.id, transmissionId));
+  console.log(`Transmission ${transmissionId} marked available.`);
+}
+
+async function deleteTransmission(transmissionId: string): Promise<void> {
+  const db = getDb();
+
+  const tx = await db.select().from(schema.transmissions).where(eq(schema.transmissions.id, transmissionId));
+  if (!tx.length) {
+    console.error(`Transmission not found: ${transmissionId}`);
+    process.exit(1);
+  }
+
+  const deletedTasks = await db.delete(schema.tasks).where(eq(schema.tasks.transmission_id, transmissionId)).returning({ id: schema.tasks.id });
+  const deletedFiles = await db.delete(schema.transmission_files).where(eq(schema.transmission_files.transmission_id, transmissionId)).returning({ id: schema.transmission_files.id });
+  const deletedSessions = await db.delete(schema.upload_sessions).where(eq(schema.upload_sessions.transmission_id, transmissionId)).returning({ id: schema.upload_sessions.id });
+  const deletedEventLinks = await db.delete(schema.event_transmissions).where(eq(schema.event_transmissions.transmission_id, transmissionId)).returning({ event_id: schema.event_transmissions.event_id });
+  await db.delete(schema.transmissions).where(eq(schema.transmissions.id, transmissionId));
+
+  console.log(`Deleted transmission: ${transmissionId}`);
+  if (deletedTasks.length)        console.log(`  tasks:              ${deletedTasks.length}`);
+  if (deletedFiles.length)        console.log(`  transmission_files: ${deletedFiles.length}`);
+  if (deletedSessions.length)     console.log(`  upload_sessions:    ${deletedSessions.length}`);
+  if (deletedEventLinks.length)   console.log(`  event_transmissions:${deletedEventLinks.length}`);
+}
+
 async function clearTranscripts(): Promise<void> {
   const db = getDb();
   const result = await db
@@ -397,6 +460,27 @@ async function main(): Promise<void> {
       break;
     }
 
+    case "delete-transmission":
+      if (!flags["transmissionId"]) {
+        console.error("Usage: seed delete-transmission --transmission-id <id>");
+        process.exit(1);
+      }
+      await deleteTransmission(flags["transmissionId"]!);
+      break;
+
+    case "complete-task":
+      if (!flags["transmissionId"]) {
+        console.error("Usage: seed complete-task --transmission-id <id> [--type <task-type>] [--transcript <text>]");
+        console.error("Example: seed complete-task --transmission-id e02b3254-17c7-46cd-b451-391861a5b824 --transcript 'All units respond'");
+        process.exit(1);
+      }
+      await completeTask(
+        flags["transmissionId"]!,
+        flags["type"] ?? "whisper",
+        flags["transcript"],
+      );
+      break;
+
     case "clear-transcripts":
       await clearTranscripts();
       break;
@@ -448,6 +532,8 @@ async function main(): Promise<void> {
       console.log("  backfill-analyze-tasks");
       console.log("  backfill-whisper-tasks [--limit <n>] [--clear]");
       console.log("  retry-failed-tasks [--type <task-type>] [--limit <n>] [--since <ISO-date>]");
+      console.log("  delete-transmission --transmission-id <id>");
+      console.log("  complete-task --transmission-id <id> [--type <task-type>] [--transcript <text>]");
       console.log("  clear-transcripts");
   }
 }

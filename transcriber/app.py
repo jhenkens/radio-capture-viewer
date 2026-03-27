@@ -122,8 +122,12 @@ class TranscriberServer:
             )
             log.debug("  prompt:   %s", prompt)
             log.debug("  hotwords: %s", hotwords)
-            segments, _ = self.model.transcribe(tmp_path, **kwargs)
-            text = " ".join(seg.text.strip() for seg in segments)
+            try:
+                segments, _ = self.model.transcribe(tmp_path, **kwargs)
+                text = " ".join(seg.text.strip() for seg in segments)
+            except Exception as e:
+                log.exception("Transcription failed: %s", e)
+                return jsonify({"error": f"Transcription failed: {e}"}), 500
 
             if not text.strip():
                 text = NO_VOICES_TEXT
