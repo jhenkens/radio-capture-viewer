@@ -1,5 +1,5 @@
 import { EventEmitter } from "events";
-import { eq, and, lt, isNull, or, ne, asc, lte, notInArray } from "drizzle-orm";
+import { eq, and, lt, isNull, or, ne, asc, lte, notInArray, sql } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import type { DB } from "../db/index.js";
 import type { FileCache } from "../cache/FileCache.js";
@@ -116,7 +116,8 @@ export class TaskRunner extends EventEmitter {
             isNull(schema.tasks.retry_after),
             lte(schema.tasks.retry_after, now)
           ),
-          saturatedTypes.length ? notInArray(schema.tasks.type, saturatedTypes) : undefined
+          saturatedTypes.length ? notInArray(schema.tasks.type, saturatedTypes) : undefined,
+          sql`(tasks.prerequisite_task_id IS NULL OR EXISTS (SELECT 1 FROM tasks p WHERE p.id = tasks.prerequisite_task_id AND p.complete = 1))`
         )
       )
       .orderBy(asc(schema.tasks.created_at))

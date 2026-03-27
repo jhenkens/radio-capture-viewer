@@ -226,6 +226,28 @@ async function backfillWhisperTasks(limit?: number, clearTranscripts = false): P
     console.log(`Created ${tasks.length} whisper task(s).`);
   }
 
+  // Link whisper tasks to their corresponding analyze_file tasks as prerequisites.
+  const allWhisperTasks = await db
+    .select({ id: schema.tasks.id, transmission_id: schema.tasks.transmission_id })
+    .from(schema.tasks)
+    .where(eq(schema.tasks.type, "whisper"));
+
+  let linked = 0;
+  for (const wt of allWhisperTasks) {
+    const analyzeTasks = await db
+      .select({ id: schema.tasks.id })
+      .from(schema.tasks)
+      .where(and(eq(schema.tasks.transmission_id, wt.transmission_id), eq(schema.tasks.type, "analyze_file")));
+    if (analyzeTasks.length) {
+      await db
+        .update(schema.tasks)
+        .set({ prerequisite_task_id: analyzeTasks[0]!.id })
+        .where(eq(schema.tasks.id, wt.id));
+      linked++;
+    }
+  }
+  if (linked) console.log(`Linked ${linked} whisper task(s) to their analyze_file prerequisite.`);
+
   console.log("Done — whisper tasks will rerun on next poll.");
 }
 

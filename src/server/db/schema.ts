@@ -120,6 +120,7 @@ export const tasks = sqliteTable(
     retry_limit: integer("retry_limit").notNull().default(3),
     retry_delay_ms: integer("retry_delay_ms").notNull().default(30_000),
     retry_after: integer("retry_after"),
+    prerequisite_task_id: text("prerequisite_task_id"),
     created_at: integer("created_at").notNull(),
   },
   (t) => ({

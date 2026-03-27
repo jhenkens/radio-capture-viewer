@@ -373,9 +373,10 @@ async function createTasksOrMarkAvailable(
 ): Promise<boolean> {
   const config = getConfig();
 
+  const analyzeTaskId = uuidv4();
   const tasks: (typeof schema.tasks.$inferInsert)[] = [
     {
-      id: uuidv4(),
+      id: analyzeTaskId,
       transmission_id: transmissionId,
       type: "analyze_file",
       required: true,
@@ -386,6 +387,7 @@ async function createTasksOrMarkAvailable(
       retry_limit: 3,
       retry_delay_ms: 5_000,
       retry_after: null,
+      prerequisite_task_id: null,
       created_at: now,
     },
   ];
@@ -403,6 +405,7 @@ async function createTasksOrMarkAvailable(
       retry_limit: 3,
       retry_delay_ms: 30_000,
       retry_after: null,
+      prerequisite_task_id: analyzeTaskId,
       created_at: now,
     });
   }
