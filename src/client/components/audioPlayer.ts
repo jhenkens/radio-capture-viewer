@@ -10,7 +10,10 @@ export interface AudioPlayerData {
 
   init(): void;
   play(tx: TransmissionDTO): void;
+  pause(): void;
+  resume(): void;
   stop(): void;
+  seek(fraction: number): void;
   formatProgress(s: number): string;
 }
 
@@ -27,12 +30,19 @@ export function audioPlayer(): AudioPlayerData {
 
       this.audio.ontimeupdate = () => {
         this.currentTime = this.audio!.currentTime;
+        // Fallback: pick up duration here if loadedmetadata/durationchange fired too early
+        if (this.audioDuration === 0) {
+          const d = this.audio!.duration;
+          if (isFinite(d) && d > 0) this.audioDuration = d;
+        }
       };
 
-      this.audio.onloadedmetadata = () => {
+      const updateDuration = () => {
         const d = this.audio!.duration;
         this.audioDuration = isFinite(d) ? d : 0;
       };
+      this.audio.onloadedmetadata = updateDuration;
+      this.audio.ondurationchange = updateDuration;
 
       this.audio.onended = () => {
         const finishedId = this.currentTransmission?.id ?? null;
@@ -40,6 +50,8 @@ export function audioPlayer(): AudioPlayerData {
         this.currentTransmission = null;
         this.currentTime = 0;
         this.audioDuration = 0;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (this as any).$store.app.playing = false;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (this as any).$store.app.setPlayingId(null);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -51,6 +63,8 @@ export function audioPlayer(): AudioPlayerData {
         this.currentTransmission = null;
         this.currentTime = 0;
         this.audioDuration = 0;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (this as any).$store.app.playing = false;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (this as any).$store.app.setPlayingId(null);
       };
@@ -67,12 +81,37 @@ export function audioPlayer(): AudioPlayerData {
       this.audio.play().then(() => {
         this.playing = true;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (this as any).$store.app.playing = true;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (this as any).$store.app.setPlayingId(tx.id);
       }).catch(() => {
         this.playing = false;
         this.currentTransmission = null;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (this as any).$store.app.playing = false;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (this as any).$store.app.setPlayingId(null);
+      });
+    },
+
+    pause() {
+      if (!this.audio) return;
+      this.audio.pause();
+      this.playing = false;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (this as any).$store.app.playing = false;
+    },
+
+    resume() {
+      if (!this.audio || !this.currentTransmission) return;
+      this.audio.play().then(() => {
+        this.playing = true;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (this as any).$store.app.playing = true;
+      }).catch(() => {
+        this.playing = false;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (this as any).$store.app.playing = false;
       });
     },
 
@@ -84,7 +123,14 @@ export function audioPlayer(): AudioPlayerData {
       this.currentTime = 0;
       this.audioDuration = 0;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (this as any).$store.app.playing = false;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (this as any).$store.app.setPlayingId(null);
+    },
+
+    seek(fraction: number) {
+      if (!this.audio || this.audioDuration <= 0) return;
+      this.audio.currentTime = Math.max(0, Math.min(1, fraction)) * this.audioDuration;
     },
 
     formatProgress(s: number): string {

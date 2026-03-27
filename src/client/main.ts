@@ -25,6 +25,7 @@ interface AppStore {
 
   // Playback coordination
   autoplay: boolean;
+  playing: boolean;
   playingId: string | null;
   lastPlayedId: string | null;
   pendingAfterId: string | null;
@@ -74,6 +75,7 @@ const appStore: AppStore = {
   localDb: {},
 
   autoplay: true,
+  playing: false,
   playingId: null,
   lastPlayedId: null,
   pendingAfterId: null,

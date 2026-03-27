@@ -65,8 +65,19 @@ export class WSClient {
 
   private scheduleReconnect(): void {
     if (this.destroyed) return;
-    this.reconnectTimer = setTimeout(() => {
+    this.reconnectTimer = setTimeout(async () => {
       this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxDelay);
+      // Before reconnecting, check if we're still authenticated (handles Authelia session expiry).
+      // A 401 from any API endpoint means the session is gone — reload to trigger the auth redirect.
+      try {
+        const res = await fetch("/api/systems", { credentials: "same-origin" });
+        if (res.status === 401) {
+          location.reload();
+          return;
+        }
+      } catch {
+        // Network error — proceed with reconnect attempt as usual
+      }
       this.connect();
     }, this.reconnectDelay);
   }

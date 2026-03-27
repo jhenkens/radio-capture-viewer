@@ -1,6 +1,8 @@
 import type { SystemDTO } from "../../shared/types";
 import { api } from "../api/client";
 
+const STORAGE_KEY = "rcv:systemId";
+
 export interface SystemSelectorData {
   systems: SystemDTO[];
   selectedSystemId: string | null;
@@ -23,7 +25,10 @@ export function systemSelector(): SystemSelectorData {
       this.error = null;
       try {
         this.systems = await api.getSystems();
-        if (this.systems.length === 1) {
+        const savedId = localStorage.getItem(STORAGE_KEY);
+        if (savedId && this.systems.find((s) => s.id === savedId)) {
+          this.selectSystem(savedId);
+        } else if (this.systems.length === 1) {
           this.selectSystem(this.systems[0]!.id);
         }
       } catch (err) {
@@ -35,6 +40,7 @@ export function systemSelector(): SystemSelectorData {
 
     selectSystem(id: string) {
       this.selectedSystemId = id;
+      localStorage.setItem(STORAGE_KEY, id);
       const sys = this.systems.find((s) => s.id === id);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (this as any).$dispatch("system-selected", { id, name: sys?.name ?? id });
