@@ -27,6 +27,7 @@ interface AppStore {
   autoplay: boolean;
   playing: boolean;
   playingId: string | null;
+  selectedId: string | null;
   lastPlayedId: string | null;
   pendingAfterId: string | null;
 
@@ -77,6 +78,7 @@ const appStore: AppStore = {
   autoplay: true,
   playing: false,
   playingId: null,
+  selectedId: null,
   lastPlayedId: null,
   pendingAfterId: null,
 
@@ -154,6 +156,7 @@ const appStore: AppStore = {
     this.localDb = {};
     this.pendingAfterId = null;
     this.lastPlayedId = null;
+    this.selectedId = null;
   },
 
   setPlayingId(id: string | null) {

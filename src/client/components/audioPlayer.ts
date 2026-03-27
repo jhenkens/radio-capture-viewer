@@ -15,6 +15,7 @@ export interface AudioPlayerData {
   stop(): void;
   seek(fraction: number): void;
   formatProgress(s: number): string;
+  _trySetDuration(): void;
 }
 
 export function audioPlayer(): AudioPlayerData {
@@ -30,19 +31,10 @@ export function audioPlayer(): AudioPlayerData {
 
       this.audio.ontimeupdate = () => {
         this.currentTime = this.audio!.currentTime;
-        // Fallback: pick up duration here if loadedmetadata/durationchange fired too early
-        if (this.audioDuration === 0) {
-          const d = this.audio!.duration;
-          if (isFinite(d) && d > 0) this.audioDuration = d;
-        }
+        if (this.audioDuration === 0) this._trySetDuration();
       };
-
-      const updateDuration = () => {
-        const d = this.audio!.duration;
-        this.audioDuration = isFinite(d) ? d : 0;
-      };
-      this.audio.onloadedmetadata = updateDuration;
-      this.audio.ondurationchange = updateDuration;
+      this.audio.onloadedmetadata = () => this._trySetDuration();
+      this.audio.ondurationchange = () => this._trySetDuration();
 
       this.audio.onended = () => {
         const finishedId = this.currentTransmission?.id ?? null;
@@ -68,6 +60,21 @@ export function audioPlayer(): AudioPlayerData {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (this as any).$store.app.setPlayingId(null);
       };
+    },
+
+    _trySetDuration() {
+      if (!this.audio) return;
+      const d = this.audio.duration;
+      if (isFinite(d) && d > 0) {
+        this.audioDuration = d;
+        return;
+      }
+      // Safari fallback: use seekable end when duration is NaN/Infinity
+      const seekable = this.audio.seekable;
+      if (seekable && seekable.length > 0) {
+        const s = seekable.end(seekable.length - 1);
+        if (isFinite(s) && s > 0) this.audioDuration = s;
+      }
     },
 
     play(tx: TransmissionDTO) {
