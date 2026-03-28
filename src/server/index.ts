@@ -63,6 +63,16 @@ async function main() {
   // Set up Fastify
   const fastify = Fastify({
     logger: {
+      serializers: {
+        req(request) {
+          return {
+            method: request.method,
+            url: request.url,
+            remoteAddress: request.ip,
+            remotePort: request.socket?.remotePort,
+          };
+        },
+      },
       transport: {
         target: "pino-pretty",
         options: { translateTime: "SYS:yyyy-mm-dd HH:MM:ss", ignore: "pid,hostname" },
