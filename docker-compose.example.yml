@@ -48,7 +48,7 @@ services:
 
   # Optional: transcriber sidecar (single-threaded faster-whisper)
   # transcriber:
-  #   image: johhenkens/radio-capture-viewer:transcriber-latest
+  #   image: ghcr.io/jhenkens/radio-capture-viewer:transcriber-latest
   #   environment:
   #     - API_KEY=change-me
   #     - WHISPER_MODEL=small.en
