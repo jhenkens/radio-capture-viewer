@@ -16,20 +16,20 @@ const ConfigSchema = z.object({
   port: z.number().int().min(1).max(65535).default(3000),
   db: z.object({
     url: z.string().default("file:./data/radio.db"),
-  }).default({}),
+  }).prefault({}),
   storage: z.object({
     provider: z.enum(["local", "s3"]).default("local"),
-    local: StorageLocalSchema.default({}),
-    s3: StorageS3Schema.default({}),
-  }).default({}),
+    local: StorageLocalSchema.prefault({}),
+    s3: StorageS3Schema.prefault({}),
+  }).prefault({}),
   cache: z.object({
     basePath: z.string().default("./data/cache"),
     maxAgeMs: z.number().int().positive().default(3_600_000),
     maxSizeBytes: z.number().int().positive().default(104_857_600),
-  }).default({}),
+  }).prefault({}),
   tasks: z.object({
     concurrency: z.number().int().min(1).default(4),
-  }).default({}),
+  }).prefault({}),
   whisper: z.object({
     enabled: z.boolean().default(false),
     baseUrl: z.string().default("https://api.openai.com"),
@@ -39,7 +39,7 @@ const ConfigSchema = z.object({
     hotwords: z.string().optional(),
     responseFormat: z.enum(["json", "text", "verbose_json"]).default("json"),
     concurrency: z.number().int().min(1).default(1),
-  }).default({}),
+  }).prefault({}),
   // Voice-activity gate that runs before Whisper. Talks to the transcriber's
   // /v1/audio/vad endpoint; baseUrl/apiKey fall back to the whisper settings.
   vad: z.object({
@@ -55,20 +55,20 @@ const ConfigSchema = z.object({
     // false = record metrics only and never archive (use for a dry run).
     archive: z.boolean().default(true),
     concurrency: z.number().int().min(1).default(2),
-  }).default({}),
+  }).prefault({}),
   channels: z.object({
     autoCreate: z.boolean().default(false),
-  }).default({}),
+  }).prefault({}),
   trustProxy: z.boolean().default(false),
   // Optional HTTP Basic auth (any username) for the viewer UI, public API and WebSocket.
   // Empty = viewer is open to anyone who can reach the server. /api/admin uses API keys.
   frontend: z.object({
     password: z.string().default(""),
-  }).default({}),
+  }).prefault({}),
   limits: z.object({
     // Max accepted size of a single uploaded audio file (multipart or base64 JSON).
     maxUploadBytes: z.number().int().positive().default(100 * 1024 * 1024),
-  }).default({}),
+  }).prefault({}),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

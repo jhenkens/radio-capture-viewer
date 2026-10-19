@@ -1,6 +1,6 @@
 # Stage 1: build server + client, then drop devDependencies in place so the runtime
 # stage can reuse this node_modules (one native better-sqlite3 build instead of two).
-FROM node:20-alpine AS builder
+FROM node:26-alpine AS builder
 WORKDIR /app
 
 # Fallback toolchain for better-sqlite3 when no prebuilt musl binary matches.
@@ -9,7 +9,7 @@ RUN apk add --no-cache python3 make g++
 COPY package*.json ./
 RUN npm ci --no-audit --no-fund
 
-COPY tsconfig*.json webpack.config.ts postcss.config.js tailwind.config.js ./
+COPY tsconfig*.json webpack.config.ts postcss.config.js ./
 COPY src/ ./src/
 # __dirname inside dist/server/server/db/index.js resolves migrations relative to itself,
 # so SQL migrations must sit next to the compiled output.
@@ -20,7 +20,7 @@ RUN npm run build \
 
 
 # Stage 2: runtime
-FROM node:20-alpine AS runtime
+FROM node:26-alpine AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production

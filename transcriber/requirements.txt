@@ -1,7 +1,8 @@
 flask
-faster-whisper
+faster-whisper>=1.2.1
 psutil
 # faster-whisper allows any av>=11, but PyAV 17+ breaks its audio decoding
 # (decode_audio -> TypeError: open() got an unexpected keyword argument 'metadata_errors').
+# Re-checked with faster-whisper 1.2.1 + av 19 on Python 3.14: still broken.
 av<17
 waitress

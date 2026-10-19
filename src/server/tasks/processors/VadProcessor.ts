@@ -99,7 +99,7 @@ export class VadProcessor implements TaskProcessor {
 
   private async callVad(audio: Buffer, filename: string): Promise<VadMetrics> {
     const form = new FormData();
-    form.append("file", new Blob([audio]), filename);
+    form.append("file", new Blob([new Uint8Array(audio)]), filename);
     form.append("threshold", String(this.opts.threshold));
 
     const res = await fetch(`${this.opts.baseUrl}/v1/audio/vad`, {

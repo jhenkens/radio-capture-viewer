@@ -12,7 +12,7 @@
  */
 
 import crypto from "crypto";
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID as uuidv4 } from "node:crypto";
 import { initConfig } from "../config/index.js";
 import { getDb, schema } from "../db/index.js";
 import { and, eq, isNull, isNotNull, gt, inArray, desc, sql } from "drizzle-orm";

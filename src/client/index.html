@@ -66,7 +66,7 @@
             placeholder="Search transcripts…"
             :value="$store.app.filterSearch"
             @input.debounce.400ms="$store.app.setFilter('filterSearch', $event.target.value)"
-            class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-green-500"
+            class="w-full bg-gray-800 border border-gray-700 rounded-sm px-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 focus:outline-hidden focus:border-green-500"
           />
           <div class="flex items-center gap-2">
             <span class="text-gray-500 text-xs w-8 shrink-0">From</span>
@@ -74,7 +74,7 @@
               type="datetime-local"
               :value="$store.app.filterStart"
               @change="$store.app.setFilter('filterStart', $event.target.value)"
-              class="flex-1 bg-gray-800 border rounded px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-green-500 [color-scheme:dark]"
+              class="flex-1 bg-gray-800 border rounded-sm px-2 py-1.5 text-sm text-gray-100 focus:outline-hidden focus:border-green-500 [color-scheme:dark]"
               :class="$store.app.filterStart ? 'border-yellow-500' : 'border-gray-700'"
             />
           </div>
@@ -84,7 +84,7 @@
               type="datetime-local"
               :value="$store.app.filterEnd"
               @change="$store.app.setFilter('filterEnd', $event.target.value)"
-              class="flex-1 bg-gray-800 border rounded px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-green-500 [color-scheme:dark]"
+              class="flex-1 bg-gray-800 border rounded-sm px-2 py-1.5 text-sm text-gray-100 focus:outline-hidden focus:border-green-500 [color-scheme:dark]"
               :class="$store.app.filterEnd ? 'border-yellow-500' : 'border-gray-700'"
             />
           </div>
@@ -102,7 +102,7 @@
                 :class="selectedSystemId === sys.id
                   ? 'bg-green-800 text-green-100'
                   : 'text-gray-300 hover:bg-gray-800'"
-                class="text-left px-2 py-1 rounded text-sm transition-colors"
+                class="text-left px-2 py-1 rounded-sm text-sm transition-colors"
                 x-text="sys.name"
               ></button>
             </template>
@@ -126,7 +126,7 @@
                 :class="isSelected(ch.id)
                   ? 'bg-blue-800 text-blue-100'
                   : 'text-gray-300 hover:bg-gray-800'"
-                class="text-left px-2 py-1 rounded text-sm transition-colors"
+                class="text-left px-2 py-1 rounded-sm text-sm transition-colors"
                 x-text="ch.name"
               ></button>
             </template>
@@ -146,7 +146,7 @@
           placeholder="Search transcripts…"
           :value="$store.app.filterSearch"
           @input.debounce.400ms="$store.app.setFilter('filterSearch', $event.target.value)"
-          class="flex-1 min-w-48 bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-green-500"
+          class="flex-1 min-w-48 bg-gray-800 border border-gray-700 rounded-sm px-3 py-1.5 text-sm text-gray-100 placeholder:text-gray-500 focus:outline-hidden focus:border-green-500"
         />
         <div class="flex items-center gap-1.5">
           <span class="text-gray-500 text-xs shrink-0">From</span>
@@ -154,7 +154,7 @@
             type="datetime-local"
             :value="$store.app.filterStart"
             @change="$store.app.setFilter('filterStart', $event.target.value)"
-            class="bg-gray-800 border rounded px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-green-500 [color-scheme:dark]"
+            class="bg-gray-800 border rounded-sm px-2 py-1.5 text-sm text-gray-100 focus:outline-hidden focus:border-green-500 [color-scheme:dark]"
             :class="$store.app.filterStart ? 'border-yellow-500' : 'border-gray-700'"
           />
         </div>
@@ -164,7 +164,7 @@
             type="datetime-local"
             :value="$store.app.filterEnd"
             @change="$store.app.setFilter('filterEnd', $event.target.value)"
-            class="bg-gray-800 border rounded px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-green-500 [color-scheme:dark]"
+            class="bg-gray-800 border rounded-sm px-2 py-1.5 text-sm text-gray-100 focus:outline-hidden focus:border-green-500 [color-scheme:dark]"
             :class="$store.app.filterEnd ? 'border-yellow-500' : 'border-gray-700'"
           />
         </div>
@@ -236,14 +236,14 @@
                     <a
                       :href="`/api/transmissions/${tx.id}/audio`"
                       :download="`${new Date(tx.recorded_at).toISOString().slice(0,19).replace('T','-').replace(/:/g,'-')}.mp3`"
-                      class="text-gray-600 group-hover:text-blue-400 w-6 h-6 flex items-center justify-center rounded hover:bg-gray-800 transition-colors"
+                      class="text-gray-600 group-hover:text-blue-400 w-6 h-6 flex items-center justify-center rounded-sm hover:bg-gray-800 transition-colors"
                       @click.stop
                       title="Download"
                     >
                       <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a1 1 0 011 1v9.586l2.293-2.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L9 12.586V3a1 1 0 011-1zM3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"/></svg>
                     </a>
                     <button
-                      class="w-6 h-6 flex items-center justify-center rounded hover:bg-gray-800 transition-colors"
+                      class="w-6 h-6 flex items-center justify-center rounded-sm hover:bg-gray-800 transition-colors"
                       :class="$store.app.playingId === tx.id && $store.app.playing ? 'text-yellow-400' : 'text-green-400'"
                       @click.stop="$store.app.selectedId = tx.id; $store.app.playingId === tx.id ? $dispatch('toggle-playback') : $dispatch('play-transmission', tx)"
                       :title="$store.app.playingId === tx.id && $store.app.playing ? 'Pause' : ($store.app.playingId === tx.id ? 'Resume' : 'Play')"
@@ -276,7 +276,7 @@
             <button
               @click="loadMore()"
               :disabled="loadingMore"
-              class="w-full py-2 bg-gray-800 hover:bg-gray-700 text-gray-400 text-xs rounded transition-colors disabled:opacity-50"
+              class="w-full py-2 bg-gray-800 hover:bg-gray-700 text-gray-400 text-xs rounded-sm transition-colors disabled:opacity-50"
             >
               <span x-show="!loadingMore">Load more</span>
               <span x-show="loadingMore">Loading…</span>
@@ -328,13 +328,13 @@
       <button
         @click="$store.app.toggleAutoplay()"
         :class="$store.app.autoplay ? 'bg-gray-300 text-gray-900' : 'bg-gray-700 text-gray-500'"
-        class="px-2 sm:px-3 py-1 rounded text-xs font-semibold transition-colors shrink-0"
+        class="px-2 sm:px-3 py-1 rounded-sm text-xs font-semibold transition-colors shrink-0"
         x-text="$store.app.autoplay ? 'Auto ON' : 'Auto OFF'"
       ></button>
       <button
         @click="playing ? pause() : resume()"
         :disabled="!currentTransmission"
-        class="px-2 sm:px-3 py-1 rounded text-xs transition-colors shrink-0 disabled:opacity-30 disabled:cursor-not-allowed"
+        class="px-2 sm:px-3 py-1 rounded-sm text-xs transition-colors shrink-0 disabled:opacity-30 disabled:cursor-not-allowed"
         :class="playing ? 'bg-yellow-700 text-yellow-100 hover:enabled:bg-yellow-600' : 'bg-green-700 text-green-100 hover:enabled:bg-green-600'"
         x-text="playing ? 'Pause' : 'Resume'"
       ></button>

@@ -1,5 +1,5 @@
 import path from "path";
-import { v4 as uuidv4 } from "uuid";
+import { randomUUID as uuidv4 } from "node:crypto";
 import { eq, and } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";

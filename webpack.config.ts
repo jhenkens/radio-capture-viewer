@@ -17,7 +17,10 @@ const config: Configuration = {
     rules: [
       {
         test: /\.ts$/,
-        use: "ts-loader",
+        // Transpile only: TypeScript 7 has no JS API for ts-loader, and `npm run build:client`
+        // type-checks with `tsc --noEmit` first.
+        loader: "esbuild-loader",
+        options: { target: "es2020" },
         exclude: /node_modules/,
       },
       {

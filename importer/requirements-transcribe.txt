@@ -1,4 +1,6 @@
 # Only needed for local transcription (`transcription.enabled` in the importer config).
 # Install with: docker build --build-arg INSTALL_TRANSCRIBE=true ./importer
-faster-whisper>=1.0.0
+faster-whisper>=1.2.1
+# faster-whisper 1.2.1 still breaks with PyAV 17+ (decode_audio -> TypeError: open() got an
+# unexpected keyword argument 'metadata_errors'); checked with av 19 on Python 3.14.
 av<17
