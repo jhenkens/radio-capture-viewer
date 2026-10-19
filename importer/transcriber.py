@@ -46,7 +46,13 @@ class Transcriber:
         with self._lock:
             if self._model is not None:
                 return
-            from faster_whisper import WhisperModel  # type: ignore[import]
+            try:
+                from faster_whisper import WhisperModel  # type: ignore[import]
+            except ImportError as e:
+                raise RuntimeError(
+                    "transcription.enabled needs faster-whisper; rebuild the image with "
+                    "--build-arg INSTALL_TRANSCRIBE=true"
+                ) from e
             logger.info(
                 "Loading faster-whisper model '%s' (device=%s, compute_type=%s, cpu_threads=%d)…",
                 self.model_size, self.device, self.compute_type, self.cpu_threads,

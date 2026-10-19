@@ -10,9 +10,12 @@ config.json
 .env
 .claude/
 importer/
+transcriber/
 docs/
+TODOs/
+*.md
 
 radio-capture-viewer.config*.json
 *.config.local.*
-TODO.md
+docker-compose*.yml
 __pycache__/

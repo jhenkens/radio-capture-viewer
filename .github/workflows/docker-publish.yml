@@ -13,12 +13,23 @@ env:
 jobs:
   docker:
     runs-on: ubuntu-latest
+    # The three images are independent, so build them in parallel.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: app
+            context: .
+            prefix: ""
+          - name: importer
+            context: ./importer
+            prefix: "importer-"
+          - name: transcriber
+            context: ./transcriber
+            prefix: "transcriber-"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -29,68 +40,24 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Docker meta (app)
-        id: meta-app
+      - name: Docker meta
+        id: meta
         uses: docker/metadata-action@v5
         with:
           images: "${{ env.DOCKER_OWNER }}/${{ github.event.repository.name }}"
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
+            type=raw,value=${{ matrix.prefix }}latest,enable={{is_default_branch}}
+            type=semver,pattern=${{ matrix.prefix }}{{version}}
+            type=semver,pattern=${{ matrix.prefix }}{{major}}.{{minor}}
+            type=semver,pattern=${{ matrix.prefix }}{{major}}
 
-      - name: Build and push app
+      - name: Build and push ${{ matrix.name }}
         uses: docker/build-push-action@v6
         with:
-          context: .
-          platforms: linux/amd64,linux/arm64
+          context: ${{ matrix.context }}
+          platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta-app.outputs.tags }}
-          labels: ${{ steps.meta-app.outputs.labels }}
-          cache-from: type=gha,scope=app
-          cache-to: type=gha,mode=max,scope=app
-
-      - name: Docker meta (importer)
-        id: meta-importer
-        uses: docker/metadata-action@v5
-        with:
-          images: "${{ env.DOCKER_OWNER }}/${{ github.event.repository.name }}"
-          tags: |
-            type=raw,value=importer-latest,enable={{is_default_branch}}
-            type=semver,pattern=importer-{{version}}
-            type=semver,pattern=importer-{{major}}.{{minor}}
-            type=semver,pattern=importer-{{major}}
-
-      - name: Build and push importer
-        uses: docker/build-push-action@v6
-        with:
-          context: ./importer
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta-importer.outputs.tags }}
-          labels: ${{ steps.meta-importer.outputs.labels }}
-          cache-from: type=gha,scope=importer
-          cache-to: type=gha,mode=max,scope=importer
-
-      - name: Docker meta (transcriber)
-        id: meta-transcriber
-        uses: docker/metadata-action@v5
-        with:
-          images: "${{ env.DOCKER_OWNER }}/${{ github.event.repository.name }}"
-          tags: |
-            type=raw,value=transcriber-latest,enable={{is_default_branch}}
-            type=semver,pattern=transcriber-{{version}}
-            type=semver,pattern=transcriber-{{major}}.{{minor}}
-            type=semver,pattern=transcriber-{{major}}
-
-      - name: Build and push transcriber
-        uses: docker/build-push-action@v6
-        with:
-          context: ./transcriber
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta-transcriber.outputs.tags }}
-          labels: ${{ steps.meta-transcriber.outputs.labels }}
-          cache-from: type=gha,scope=transcriber
-          cache-to: type=gha,mode=max,scope=transcriber
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
