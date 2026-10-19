@@ -56,7 +56,7 @@ jobs:
             type=semver,pattern=${{ matrix.prefix }}{{major}}
 
       - name: Build and push ${{ matrix.name }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           platforms: linux/amd64
