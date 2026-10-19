@@ -1,6 +1,6 @@
 # Stage 1: build server + client, then drop devDependencies in place so the runtime
 # stage can reuse this node_modules (one native better-sqlite3 build instead of two).
-FROM node:20-alpine AS builder
+FROM node:26-alpine AS builder
 WORKDIR /app
 
 # Fallback toolchain for better-sqlite3 when no prebuilt musl binary matches.
@@ -20,7 +20,7 @@ RUN npm run build \
 
 
 # Stage 2: runtime
-FROM node:20-alpine AS runtime
+FROM node:26-alpine AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production
