@@ -1,4 +1,4 @@
 # Only needed for local transcription (`transcription.enabled` in the importer config).
 # Install with: docker build --build-arg INSTALL_TRANSCRIBE=true ./importer
 faster-whisper>=1.0.0
-av<17
+av<20
