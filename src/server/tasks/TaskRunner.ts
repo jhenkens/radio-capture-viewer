@@ -28,6 +28,8 @@ export class TaskRunner extends EventEmitter {
   private activeCount = 0;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
+  private polling = false;
+  private pollAgain = false;
 
   constructor(
     private readonly db: DB,
@@ -68,8 +70,14 @@ export class TaskRunner extends EventEmitter {
     this.schedulePoll(0);
   }
 
+  // Keep exactly one pending poll timer. Every finished task calls schedulePoll(0) and every
+  // poll ends by scheduling the next one, so without replacing the old timer each finished
+  // task would leave behind another permanent poller (hundreds of claim queries per second
+  // after a large backfill).
   private schedulePoll(delayMs: number): void {
+    if (this.pollTimer) clearTimeout(this.pollTimer);
     this.pollTimer = setTimeout(() => {
+      this.pollTimer = null;
       this.poll().catch((err) =>
         console.error("[TaskRunner] Poll error:", err)
       );
@@ -79,6 +87,25 @@ export class TaskRunner extends EventEmitter {
   private async poll(): Promise<void> {
     if (!this.running) return;
 
+    // A poll is already claiming tasks; make it go around once more rather than overlap.
+    if (this.polling) {
+      this.pollAgain = true;
+      return;
+    }
+    this.polling = true;
+    try {
+      do {
+        this.pollAgain = false;
+        await this.claimAvailableTasks();
+      } while (this.pollAgain && this.running);
+    } finally {
+      this.polling = false;
+    }
+
+    this.schedulePoll(POLL_INTERVAL_MS);
+  }
+
+  private async claimAvailableTasks(): Promise<void> {
     while (this.activeCount < this.concurrency) {
       // Types whose per-processor concurrency limit is currently reached
       const saturatedTypes = [...this.concurrencyByType.entries()]
@@ -91,8 +118,6 @@ export class TaskRunner extends EventEmitter {
         console.error("[TaskRunner] Task error:", task.id, err)
       );
     }
-
-    this.schedulePoll(POLL_INTERVAL_MS);
   }
 
   private async claimNextTask(saturatedTypes: string[]): Promise<(typeof schema.tasks.$inferSelect) | null> {
