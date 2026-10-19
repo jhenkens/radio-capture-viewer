@@ -360,7 +360,8 @@ export async function uploadRoutes(
 
 /**
  * Creates required tasks for a new transmission.
- * analyze_file is always created; whisper is skipped when a transcript was already provided.
+ * analyze_file is always created; vad runs before whisper when enabled; whisper is skipped when a
+ * transcript was already provided.
  * The transmission becomes available once all required tasks complete (via TaskRunner).
  */
 async function createTasksOrMarkAvailable(
@@ -392,6 +393,28 @@ async function createTasksOrMarkAvailable(
     },
   ];
 
+  // VAD runs before Whisper so confidently-empty audio never reaches it. It is required,
+  // so a transmission is only published once it has been checked (VadProcessor fails open).
+  let vadTaskId: string | null = null;
+  if (config.vad.enabled) {
+    vadTaskId = uuidv4();
+    tasks.push({
+      id: vadTaskId,
+      transmission_id: transmissionId,
+      type: "vad",
+      required: true,
+      complete: false,
+      processing_start_time: null,
+      processing_end_time: null,
+      failure_count: 0,
+      retry_limit: 3,
+      retry_delay_ms: 5_000,
+      retry_after: null,
+      prerequisite_task_id: null,
+      created_at: now,
+    });
+  }
+
   if (config.whisper.enabled && !hasTranscript) {
     tasks.push({
       id: uuidv4(),
@@ -405,7 +428,7 @@ async function createTasksOrMarkAvailable(
       retry_limit: 3,
       retry_delay_ms: 30_000,
       retry_after: null,
-      prerequisite_task_id: analyzeTaskId,
+      prerequisite_task_id: vadTaskId ?? analyzeTaskId,
       created_at: now,
     });
   }

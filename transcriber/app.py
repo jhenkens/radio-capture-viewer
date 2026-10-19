@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """
-transcriber — minimal single-threaded OpenAI-compatible transcription server
-backed by faster-whisper.
+transcriber — minimal OpenAI-compatible transcription server backed by
+faster-whisper, plus a cheap standalone voice-activity check.
 
-Processes one request at a time (Flask threaded=False). Any concurrent
-request waits at the OS socket level until the current one finishes.
+Whisper runs one request at a time (guarded by a lock); other transcription
+requests wait their turn. /v1/audio/vad only runs the small Silero model, so
+it is served concurrently and is not blocked by a long transcription.
+
+Endpoints:
+  POST /v1/audio/transcriptions   OpenAI-compatible transcription
+  POST /v1/audio/vad              Silero speech metrics (form: file, optional threshold)
 
 Required env:
   API_KEY        Bearer token clients must present
@@ -25,11 +30,14 @@ import os
 import signal
 import sys
 import tempfile
+import threading
 import warnings
 
 import psutil
 from flask import Flask, g, request, jsonify
 from faster_whisper import WhisperModel
+
+import vad
 
 log = logging.getLogger(__name__)
 
@@ -58,10 +66,16 @@ class TranscriberServer:
         self.vad_filter = vad_filter
         self.port       = port
         self.app        = Flask(__name__)
+        self._model_lock = threading.Lock()
 
         self.app.add_url_rule(
             "/v1/audio/transcriptions",
             view_func=self._transcribe,
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/v1/audio/vad",
+            view_func=self._vad,
             methods=["POST"],
         )
         self.app.before_request(self._before_request)
@@ -71,7 +85,7 @@ class TranscriberServer:
         signal.signal(signal.SIGTERM, self._handle_shutdown)
         signal.signal(signal.SIGINT,  self._handle_shutdown)
         log.info("Listening on port %d", self.port)
-        self.app.run(host="0.0.0.0", port=self.port, threaded=False)
+        self.app.run(host="0.0.0.0", port=self.port, threaded=True)
 
     def _handle_shutdown(self, signum, frame) -> None:
         log.info("Received signal %s, shutting down.", signal.Signals(signum).name)
@@ -90,9 +104,46 @@ class TranscriberServer:
             log.debug("← %s %d | mem: %.1f MB%s", request.path, response.status_code, mem, delta)
         return response
 
-    def _transcribe(self) -> tuple:
+    def _authorized(self) -> bool:
         auth = request.headers.get("Authorization", "")
-        if not auth.startswith("Bearer ") or auth[7:] != self.api_key:
+        return auth.startswith("Bearer ") and auth[7:] == self.api_key
+
+    def _vad(self) -> tuple:
+        if not self._authorized():
+            return jsonify({"error": "Unauthorized"}), 401
+
+        if "file" not in request.files:
+            return jsonify({"error": "file is required"}), 400
+
+        try:
+            threshold = float(request.form.get("threshold", "0.5"))
+        except ValueError:
+            return jsonify({"error": "threshold must be a number"}), 400
+
+        audio = request.files["file"]
+        suffix = os.path.splitext(audio.filename or "audio")[1] or ".mp3"
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                audio.save(tmp)
+                tmp_path = tmp.name
+            try:
+                result = vad.analyze(tmp_path, threshold)
+            except Exception as e:
+                log.exception("VAD failed for %s: %s", audio.filename, e)
+                return jsonify({"error": f"VAD failed: {e}"}), 500
+        finally:
+            if tmp_path:
+                os.unlink(tmp_path)
+
+        log.info(
+            "VAD %s: speech=%dms/%dms max_prob=%.2f",
+            audio.filename, result["speech_ms"], result["duration_ms"], result["max_prob"],
+        )
+        return jsonify(result), 200
+
+    def _transcribe(self) -> tuple:
+        if not self._authorized():
             return jsonify({"error": "Unauthorized"}), 401
 
         if "file" not in request.files:
@@ -130,8 +181,9 @@ class TranscriberServer:
             log.debug("  prompt:   %s", prompt)
             log.debug("  hotwords: %s", hotwords)
             try:
-                segments, _ = self.model.transcribe(tmp_path, **kwargs)
-                text = " ".join(seg.text.strip() for seg in segments)
+                with self._model_lock:
+                    segments, _ = self.model.transcribe(tmp_path, **kwargs)
+                    text = " ".join(seg.text.strip() for seg in segments)
             except Exception as e:
                 log.exception("Transcription failed: %s", e)
                 return jsonify({"error": f"Transcription failed: {e}"}), 500

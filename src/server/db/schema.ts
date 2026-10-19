@@ -2,6 +2,7 @@ import {
   sqliteTable,
   text,
   integer,
+  real,
   index,
   primaryKey,
   uniqueIndex,
@@ -61,6 +62,12 @@ export const transmissions = sqliteTable(
     frequency_hz: integer("frequency_hz"),
     recorded_at: integer("recorded_at").notNull(),
     created_at: integer("created_at").notNull(),
+    // Hidden from lists/search/live push but kept (audio + row) so it can be restored.
+    archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+    // Silero VAD metrics; null until the vad task has run.
+    vad_speech_ms: integer("vad_speech_ms"),
+    vad_max_prob: real("vad_max_prob"),
+    vad_checked_at: integer("vad_checked_at"),
   },
   (t) => ({
     listIdx: index("transmissions_list_idx").on(

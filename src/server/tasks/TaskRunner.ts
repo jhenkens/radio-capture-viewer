@@ -234,6 +234,7 @@ export class TaskRunner extends EventEmitter {
     if (updated.length > 0) {
       // Transmission just became available.
       const tx = updated[0]!;
+      if (tx.archived) return; // VAD archived it: never push to clients.
       this.notifications.emitTransmissionAvailable({
         system_id: tx.system_id,
         channel_id: tx.channel_id,
@@ -250,7 +251,7 @@ export class TaskRunner extends EventEmitter {
         .from(schema.transmissions)
         .where(eq(schema.transmissions.id, transmissionId));
 
-      if (txRows.length && txRows[0]!.available) {
+      if (txRows.length && txRows[0]!.available && !txRows[0]!.archived) {
         const tx = txRows[0]!;
         this.notifications.emitTransmissionAvailable({
           system_id: tx.system_id,

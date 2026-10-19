@@ -40,6 +40,22 @@ const ConfigSchema = z.object({
     responseFormat: z.enum(["json", "text", "verbose_json"]).default("json"),
     concurrency: z.number().int().min(1).default(1),
   }).default({}),
+  // Voice-activity gate that runs before Whisper. Talks to the transcriber's
+  // /v1/audio/vad endpoint; baseUrl/apiKey fall back to the whisper settings.
+  vad: z.object({
+    enabled: z.boolean().default(false),
+    baseUrl: z.string().optional(),
+    apiKey: z.string().optional(),
+    // Per-window (32 ms) probability at or above which audio counts as speech.
+    threshold: z.number().min(0).max(1).default(0.5),
+    // Archive only when BOTH hold: less than minSpeechMs of speech and a peak
+    // probability below confidentSilenceProb. Anything borderline goes on to Whisper.
+    minSpeechMs: z.number().int().min(0).default(200),
+    confidentSilenceProb: z.number().min(0).max(1).default(0.6),
+    // false = record metrics only and never archive (use for a dry run).
+    archive: z.boolean().default(true),
+    concurrency: z.number().int().min(1).default(2),
+  }).default({}),
   channels: z.object({
     autoCreate: z.boolean().default(false),
   }).default({}),
@@ -82,6 +98,14 @@ function applyEnvOverrides(base: Record<string, unknown>): Record<string, unknow
   if (process.env["WHISPER_HOTWORDS"]) set(["whisper", "hotwords"], process.env["WHISPER_HOTWORDS"]);
   if (process.env["WHISPER_CONCURRENCY"]) set(["whisper", "concurrency"], parseInt(process.env["WHISPER_CONCURRENCY"]!, 10));
   if (process.env["WHISPER_RESPONSE_FORMAT"]) set(["whisper", "responseFormat"], process.env["WHISPER_RESPONSE_FORMAT"]);
+  if (process.env["VAD_ENABLED"]) set(["vad", "enabled"], process.env["VAD_ENABLED"] === "true");
+  if (process.env["VAD_BASE_URL"]) set(["vad", "baseUrl"], process.env["VAD_BASE_URL"]);
+  if (process.env["VAD_API_KEY"]) set(["vad", "apiKey"], process.env["VAD_API_KEY"]);
+  if (process.env["VAD_THRESHOLD"]) set(["vad", "threshold"], parseFloat(process.env["VAD_THRESHOLD"]!));
+  if (process.env["VAD_MIN_SPEECH_MS"]) set(["vad", "minSpeechMs"], parseInt(process.env["VAD_MIN_SPEECH_MS"]!, 10));
+  if (process.env["VAD_CONFIDENT_SILENCE_PROB"]) set(["vad", "confidentSilenceProb"], parseFloat(process.env["VAD_CONFIDENT_SILENCE_PROB"]!));
+  if (process.env["VAD_ARCHIVE"]) set(["vad", "archive"], process.env["VAD_ARCHIVE"] === "true");
+  if (process.env["VAD_CONCURRENCY"]) set(["vad", "concurrency"], parseInt(process.env["VAD_CONCURRENCY"]!, 10));
   if (process.env["TASKS_CONCURRENCY"]) set(["tasks", "concurrency"], parseInt(process.env["TASKS_CONCURRENCY"]!, 10));
   if (process.env["CHANNELS_AUTO_CREATE"]) set(["channels", "autoCreate"], process.env["CHANNELS_AUTO_CREATE"] === "true");
   if (process.env["TRUST_PROXY"]) set(["trustProxy"], process.env["TRUST_PROXY"] === "true");

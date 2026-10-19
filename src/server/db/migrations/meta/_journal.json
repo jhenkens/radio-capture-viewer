@@ -43,6 +43,13 @@
       "when": 1774650152395,
       "tag": "0005_parched_selene",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1792435173289,
+      "tag": "0006_complete_quentin_quire",
+      "breakpoints": true
     }
   ]
 }

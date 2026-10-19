@@ -18,6 +18,9 @@ export class WhisperProcessor implements TaskProcessor {
   async process(task: Task, transmission: Transmission, ctx: TaskProcessorContext): Promise<void> {
     const { db, cache, storage } = ctx;
 
+    // Archived by the VAD stage (or by hand): nothing worth transcribing.
+    if (transmission.archived) return;
+
     // Find the transmission file
     const files = await db
       .select()

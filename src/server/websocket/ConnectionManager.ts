@@ -87,6 +87,7 @@ export class ConnectionManager {
     const conditions = [
       eq(schema.transmissions.system_id, system_id),
       eq(schema.transmissions.available, true),
+      eq(schema.transmissions.archived, false),
     ];
 
     if (channel_ids?.length) {

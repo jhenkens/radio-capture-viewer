@@ -13,6 +13,7 @@ import { FileCache } from "./cache/FileCache.js";
 import { getNotificationService } from "./notifications/NotificationService.js";
 import { TaskRunner } from "./tasks/TaskRunner.js";
 import { AnalyzeFileProcessor } from "./tasks/processors/AnalyzeFileProcessor.js";
+import { VadProcessor } from "./tasks/processors/VadProcessor.js";
 import { WhisperProcessor } from "./tasks/processors/WhisperProcessor.js";
 import { ConnectionManager } from "./websocket/ConnectionManager.js";
 import { handleWebSocket } from "./websocket/handler.js";
@@ -53,6 +54,22 @@ async function main() {
     taskRunner.registerProcessor(
       new WhisperProcessor(config.whisper.baseUrl, config.whisper.apiKey, config.whisper.model, config.whisper.prompt, config.whisper.hotwords, config.whisper.responseFormat),
       config.whisper.concurrency
+    );
+  }
+
+  if (config.vad.enabled) {
+    taskRunner.registerProcessor(
+      new VadProcessor({
+        baseUrl: config.vad.baseUrl ?? config.whisper.baseUrl,
+        apiKey: config.vad.apiKey ?? config.whisper.apiKey,
+        threshold: config.vad.threshold,
+        rule: {
+          minSpeechMs: config.vad.minSpeechMs,
+          confidentSilenceProb: config.vad.confidentSilenceProb,
+        },
+        archive: config.vad.archive,
+      }),
+      config.vad.concurrency
     );
   }
 

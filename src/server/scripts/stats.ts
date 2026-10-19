@@ -52,7 +52,8 @@ async function main(): Promise<void> {
     .where(
       and(
         gte(schema.transmissions.recorded_at, since),
-        eq(schema.transmissions.available, true)
+        eq(schema.transmissions.available, true),
+        eq(schema.transmissions.archived, false)
       )
     )
     .groupBy(sql`date(${schema.transmissions.recorded_at} / 1000, 'unixepoch')`)
@@ -103,7 +104,8 @@ async function main(): Promise<void> {
     .where(
       and(
         gte(schema.transmissions.recorded_at, since),
-        eq(schema.transmissions.available, true)
+        eq(schema.transmissions.available, true),
+        eq(schema.transmissions.archived, false)
       )
     )
     .groupBy(schema.channels.id)

@@ -13,7 +13,9 @@ import crypto from "crypto";
 import { v4 as uuidv4 } from "uuid";
 import { initConfig } from "../config/index.js";
 import { getDb, schema } from "../db/index.js";
-import { and, eq, isNull, gt, inArray, desc } from "drizzle-orm";
+import { and, eq, isNull, isNotNull, gt, inArray, desc, sql } from "drizzle-orm";
+import { getConfig } from "../config/index.js";
+import { isConfidentSilence, NO_VOICES_TEXT } from "../tasks/processors/VadProcessor.js";
 
 function hashKey(key: string): string {
   return crypto.createHash("sha256").update(key).digest("hex");
@@ -251,6 +253,144 @@ async function backfillWhisperTasks(limit?: number, clearTranscripts = false): P
   console.log("Done — whisper tasks will rerun on next poll.");
 }
 
+async function backfillVadTasks(limit?: number, force = false): Promise<void> {
+  const db = getDb();
+  const now = Date.now();
+
+  if (!getConfig().vad.enabled) {
+    console.warn("Note: vad.enabled is false here — tasks will sit idle until the server runs with VAD_ENABLED=true.");
+  }
+
+  // Only transmissions that actually have audio.
+  let candidates = await db
+    .selectDistinct({ id: schema.transmission_files.transmission_id })
+    .from(schema.transmission_files)
+    .innerJoin(schema.transmissions, eq(schema.transmissions.id, schema.transmission_files.transmission_id))
+    .orderBy(desc(schema.transmissions.recorded_at));
+  if (limit !== undefined) candidates = candidates.slice(0, limit);
+  const ids = candidates.map((c) => c.id);
+  if (!ids.length) {
+    console.log("No transmissions found.");
+    return;
+  }
+
+  const existing = new Set<string>();
+  // Chunk the IN list to stay under SQLite's bound-parameter limit.
+  for (let i = 0; i < ids.length; i += 500) {
+    const rows = await db
+      .select({ transmission_id: schema.tasks.transmission_id })
+      .from(schema.tasks)
+      .where(and(eq(schema.tasks.type, "vad"), inArray(schema.tasks.transmission_id, ids.slice(i, i + 500))));
+    for (const r of rows) existing.add(r.transmission_id);
+  }
+
+  if (force && existing.size) {
+    for (const chunk of [...existing].reduce<string[][]>((a, id, i) => {
+      (a[Math.floor(i / 500)] ??= []).push(id);
+      return a;
+    }, [])) {
+      await db
+        .update(schema.tasks)
+        .set({ complete: false, processing_start_time: null, processing_end_time: null, failure_count: 0, retry_after: null })
+        .where(and(eq(schema.tasks.type, "vad"), inArray(schema.tasks.transmission_id, chunk)));
+    }
+    console.log(`Reset ${existing.size} existing vad task(s).`);
+  }
+
+  const missing = ids.filter((id) => !existing.has(id));
+  for (let i = 0; i < missing.length; i += 200) {
+    await db.insert(schema.tasks).values(
+      missing.slice(i, i + 200).map((id) => ({
+        id: uuidv4(),
+        transmission_id: id,
+        type: "vad",
+        // Not required: these transmissions are already published.
+        required: false,
+        complete: false,
+        processing_start_time: null,
+        processing_end_time: null,
+        failure_count: 0,
+        retry_limit: 3,
+        retry_delay_ms: 5_000,
+        created_at: now,
+      }))
+    );
+  }
+  console.log(`Created ${missing.length} vad task(s) for ${ids.length} transmission(s); they run on the next poll.`);
+  if (!getConfig().vad.archive) console.log("vad.archive is false: results are recorded but nothing is archived.");
+}
+
+async function vadReport(): Promise<void> {
+  const db = getDb();
+  const rule = { minSpeechMs: getConfig().vad.minSpeechMs, confidentSilenceProb: getConfig().vad.confidentSilenceProb };
+
+  const [{ total = 0 } = {}] = await db.select({ total: sql<number>`count(*)` }).from(schema.transmissions);
+  const checked = await db
+    .select({ speech: schema.transmissions.vad_speech_ms, prob: schema.transmissions.vad_max_prob, archived: schema.transmissions.archived })
+    .from(schema.transmissions)
+    .where(isNotNull(schema.transmissions.vad_checked_at));
+
+  console.log(`\nVAD report: ${checked.length} checked of ${total} transmissions`);
+  console.log(`Rule: archive when speech < ${rule.minSpeechMs} ms AND max_prob < ${rule.confidentSilenceProb}`);
+
+  const buckets: [string, (s: number, p: number) => boolean][] = [
+    ["no speech windows, peak < 0.3", (s, p) => s === 0 && p < 0.3],
+    ["no speech windows, peak 0.3-0.5", (s, p) => s === 0 && p >= 0.3],
+    ["< 200 ms speech", (s) => s > 0 && s < 200],
+    ["200-500 ms speech", (s) => s >= 200 && s < 500],
+    ["500 ms-1 s speech", (s) => s >= 500 && s < 1000],
+    ["> 1 s speech", (s) => s >= 1000],
+  ];
+  for (const [label, test] of buckets) {
+    const n = checked.filter((c) => test(c.speech ?? 0, c.prob ?? 0)).length;
+    console.log(`  ${label.padEnd(34)} ${String(n).padStart(7)}`);
+  }
+  const wouldArchive = checked.filter((c) => !c.archived && isConfidentSilence(c.speech ?? 0, c.prob ?? 0, rule)).length;
+  const archived = checked.filter((c) => c.archived).length;
+  console.log(`\nAlready archived: ${archived}`);
+  console.log(`Would archive under current rule (run archive-by-vad): ${wouldArchive}`);
+}
+
+async function archiveByVad(dryRun: boolean): Promise<void> {
+  const db = getDb();
+  const cfg = getConfig().vad;
+  const rule = { minSpeechMs: cfg.minSpeechMs, confidentSilenceProb: cfg.confidentSilenceProb };
+
+  const rows = await db
+    .select({ id: schema.transmissions.id, speech: schema.transmissions.vad_speech_ms, prob: schema.transmissions.vad_max_prob })
+    .from(schema.transmissions)
+    .where(and(eq(schema.transmissions.archived, false), isNotNull(schema.transmissions.vad_checked_at)));
+  const ids = rows.filter((r) => isConfidentSilence(r.speech ?? 0, r.prob ?? 0, rule)).map((r) => r.id);
+
+  console.log(`${ids.length} transmission(s) match (speech < ${rule.minSpeechMs} ms, max_prob < ${rule.confidentSilenceProb}).`);
+  if (dryRun || !ids.length) {
+    if (dryRun) console.log("Dry run: nothing changed.");
+    return;
+  }
+  for (let i = 0; i < ids.length; i += 500) {
+    await db
+      .update(schema.transmissions)
+      .set({ archived: true, transcript: NO_VOICES_TEXT })
+      .where(inArray(schema.transmissions.id, ids.slice(i, i + 500)));
+  }
+  console.log(`Archived ${ids.length} transmission(s).`);
+}
+
+async function unarchive(transmissionId?: string): Promise<void> {
+  const db = getDb();
+  const where = transmissionId
+    ? and(eq(schema.transmissions.id, transmissionId), eq(schema.transmissions.archived, true))
+    : eq(schema.transmissions.archived, true);
+  // Transcripts were overwritten with the no-voices marker on archive; clear them so a
+  // later backfill-whisper-tasks can fill them in properly.
+  const rows = await db
+    .update(schema.transmissions)
+    .set({ archived: false, transcript: null })
+    .where(where)
+    .returning({ id: schema.transmissions.id });
+  console.log(`Unarchived ${rows.length} transmission(s).`);
+}
+
 async function completeTask(transmissionId: string, type: string, transcript?: string): Promise<void> {
   const db = getDb();
   const now = Date.now();
@@ -464,6 +604,29 @@ async function main(): Promise<void> {
       );
       break;
 
+    case "backfill-vad-tasks":
+      await backfillVadTasks(
+        flags["limit"] ? parseInt(flags["limit"]!, 10) : undefined,
+        flags["force"] === "true"
+      );
+      break;
+
+    case "vad-report":
+      await vadReport();
+      break;
+
+    case "archive-by-vad":
+      await archiveByVad(flags["dryRun"] === "true");
+      break;
+
+    case "unarchive":
+      if (!flags["transmissionId"] && flags["all"] !== "true") {
+        console.error("Usage: seed unarchive --transmission-id <id> | --all");
+        process.exit(1);
+      }
+      await unarchive(flags["transmissionId"]);
+      break;
+
     case "retry-failed-tasks": {
       let sinceMs: number | undefined;
       if (flags["since"] !== undefined) {
@@ -553,6 +716,10 @@ async function main(): Promise<void> {
       console.log("  set-hotwords --system-id <id> [--channel-id <id>] --clear");
       console.log("  backfill-analyze-tasks");
       console.log("  backfill-whisper-tasks [--limit <n>] [--clear]");
+      console.log("  backfill-vad-tasks [--limit <n>] [--force]");
+      console.log("  vad-report");
+      console.log("  archive-by-vad [--dry-run]");
+      console.log("  unarchive --transmission-id <id> | --all");
       console.log("  retry-failed-tasks [--type <task-type>] [--limit <n>] [--since <ISO-date>]");
       console.log("  delete-transmission --transmission-id <id>");
       console.log("  complete-task --transmission-id <id> [--type <task-type>] [--transcript <text>]");
