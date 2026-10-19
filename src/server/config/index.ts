@@ -60,6 +60,15 @@ const ConfigSchema = z.object({
     autoCreate: z.boolean().default(false),
   }).default({}),
   trustProxy: z.boolean().default(false),
+  // Optional HTTP Basic auth (any username) for the viewer UI, public API and WebSocket.
+  // Empty = viewer is open to anyone who can reach the server. /api/admin uses API keys.
+  frontend: z.object({
+    password: z.string().default(""),
+  }).default({}),
+  limits: z.object({
+    // Max accepted size of a single uploaded audio file (multipart or base64 JSON).
+    maxUploadBytes: z.number().int().positive().default(100 * 1024 * 1024),
+  }).default({}),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -108,6 +117,8 @@ function applyEnvOverrides(base: Record<string, unknown>): Record<string, unknow
   if (process.env["VAD_CONCURRENCY"]) set(["vad", "concurrency"], parseInt(process.env["VAD_CONCURRENCY"]!, 10));
   if (process.env["TASKS_CONCURRENCY"]) set(["tasks", "concurrency"], parseInt(process.env["TASKS_CONCURRENCY"]!, 10));
   if (process.env["CHANNELS_AUTO_CREATE"]) set(["channels", "autoCreate"], process.env["CHANNELS_AUTO_CREATE"] === "true");
+  if (process.env["FRONTEND_PASSWORD"]) set(["frontend", "password"], process.env["FRONTEND_PASSWORD"]);
+  if (process.env["MAX_UPLOAD_BYTES"]) set(["limits", "maxUploadBytes"], parseInt(process.env["MAX_UPLOAD_BYTES"]!, 10));
   if (process.env["TRUST_PROXY"]) set(["trustProxy"], process.env["TRUST_PROXY"] === "true");
 
   return cfg;

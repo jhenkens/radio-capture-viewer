@@ -13,15 +13,44 @@ function hashKey(key: string): string {
   return crypto.createHash("sha256").update(key).digest("hex");
 }
 
+// Per-IP throttle on failed auth attempts (in-memory; resets on restart).
+const MAX_FAILURES = 10;
+const WINDOW_MS = 60_000;
+const failures = new Map<string, { count: number; resetAt: number }>();
+
+function isBlocked(ip: string, now: number): boolean {
+  const f = failures.get(ip);
+  if (!f) return false;
+  if (now > f.resetAt) {
+    failures.delete(ip);
+    return false;
+  }
+  return f.count >= MAX_FAILURES;
+}
+
+function recordFailure(ip: string, now: number): void {
+  if (failures.size > 10_000) failures.clear();
+  const f = failures.get(ip);
+  if (!f || now > f.resetAt) failures.set(ip, { count: 1, resetAt: now + WINDOW_MS });
+  else f.count++;
+}
+
 export async function apiKeyAuth(
   request: FastifyRequest,
   reply: FastifyReply
 ): Promise<void> {
+  const now = Date.now();
+  if (isBlocked(request.ip, now)) {
+    reply.status(429).header("Retry-After", "60").send({ error: "Too many failed attempts" });
+    return;
+  }
+
   const key =
     (request.headers["x-api-key"] as string | undefined) ??
     (request.headers["authorization"] as string | undefined)?.replace(/^Bearer\s+/i, "");
 
   if (!key) {
+    recordFailure(request.ip, now);
     reply.status(401).send({ error: "Missing API key" });
     return;
   }
@@ -36,6 +65,7 @@ export async function apiKeyAuth(
     .where(eq(schema.api_keys.key_hash, hash));
 
   if (!rows.length) {
+    recordFailure(request.ip, now);
     reply.status(401).send({ error: "Invalid API key" });
     return;
   }

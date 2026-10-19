@@ -20,4 +20,9 @@ RUN pip install -r requirements.txt \
 COPY config.default.yaml /config/config.yaml
 COPY *.py ./
 
+# Run unprivileged with a generic uid. Override at runtime to match the owner of the
+# recordings mount, e.g. docker-compose `user: "1000:1000"`.
+RUN useradd --system --uid 10001 --no-create-home importer
+USER 10001:10001
+
 CMD ["python", "main.py", "--config", "/config/config.yaml"]

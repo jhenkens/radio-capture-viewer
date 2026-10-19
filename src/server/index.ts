@@ -19,6 +19,7 @@ import { ConnectionManager } from "./websocket/ConnectionManager.js";
 import { handleWebSocket } from "./websocket/handler.js";
 import { adminRouter } from "./admin/router.js";
 import { frontendApiRouter } from "./frontend-api/router.js";
+import { isAuthorizedRequest } from "./frontend-api/basicAuth.js";
 import type { StorageProvider } from "./storage/StorageProvider.js";
 
 async function main() {
@@ -96,12 +97,28 @@ async function main() {
       },
     },
     trustProxy: config.trustProxy,
+    // base64 JSON uploads inflate the file by ~4/3; keep the body cap in line with the file cap.
+    bodyLimit: Math.ceil(config.limits.maxUploadBytes * 1.4) + 64 * 1024,
   });
 
   await fastify.register(cors, { origin: true });
   await fastify.register(multipart, {
-    limits: { fileSize: 500 * 1024 * 1024 }, // 500MB
+    limits: { fileSize: config.limits.maxUploadBytes, files: 1 },
   });
+
+  // Optional password gate for everything except the API-key-protected admin API.
+  if (config.frontend.password) {
+    fastify.addHook("onRequest", async (request, reply) => {
+      if (request.url.startsWith("/api/admin")) return;
+      if (isAuthorizedRequest(request.raw, config.frontend.password)) return;
+      reply
+        .header("WWW-Authenticate", 'Basic realm="Radio Capture Viewer", charset="UTF-8"')
+        .status(401)
+        .send({ error: "Authentication required" });
+    });
+  } else {
+    console.warn("[server] FRONTEND_PASSWORD is not set — the viewer, audio and WebSocket are open to anyone who can reach this port");
+  }
 
   // API routes
   await fastify.register(adminRouter, {
@@ -146,7 +163,13 @@ async function main() {
 
   // Set up WebSocket server on the same port via the underlying http server
   const connectionManager = new ConnectionManager(db, notifications);
-  const wss = new WebSocketServer({ server: fastify.server });
+  const wss = new WebSocketServer({
+    server: fastify.server,
+    verifyClient: config.frontend.password
+      ? (info: { req: import("http").IncomingMessage }) => isAuthorizedRequest(info.req, config.frontend.password)
+      : undefined,
+    maxPayload: 64 * 1024,
+  });
 
   wss.on("connection", (ws) => {
     handleWebSocket(ws, connectionManager);

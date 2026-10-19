@@ -35,6 +35,11 @@ RUN apk add --no-cache ffmpeg \
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 
+# Run unprivileged. /app/data is the default volume mount point; an existing bind-mounted
+# ./data directory must be writable by uid 1000 (chown -R 1000:1000 ./data).
+RUN mkdir -p /app/data && chown -R node:node /app/data
+USER node
+
 EXPOSE 3000
 
 CMD ["node", "dist/server/server/index.js"]

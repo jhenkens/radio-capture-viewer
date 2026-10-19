@@ -1,0 +1,47 @@
+name: security
+
+on:
+  push:
+    branches:
+      - "main"
+  pull_request:
+  schedule:
+    # New advisories appear without any commit, so re-audit weekly.
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  npm-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # Production dependencies only: build tooling never ships in the image.
+      - run: npm audit --omit=dev --audit-level=high
+
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pip-audit
+      - run: |
+          pip-audit -r transcriber/requirements.txt
+          pip-audit -r importer/requirements.txt
+          pip-audit -r importer/requirements-transcribe.txt
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint

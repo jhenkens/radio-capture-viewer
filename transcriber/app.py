@@ -21,10 +21,13 @@ Optional env:
   BEAM_SIZE      beam search width (default: 5)
   VAD_FILTER     use Silero VAD to skip silent/non-voice audio (default: true)
   PORT           listen port (default: 8000)
+  HOST           bind address (default: 0.0.0.0)
+  MAX_UPLOAD_MB  max accepted request size in MB (default: 100)
   LOG_LEVEL      global log level: DEBUG / INFO / WARNING / ERROR (default: WARNING)
   APP_LOG_LEVEL  log level for this app: DEBUG / INFO / WARNING / ERROR (default: INFO)
 """
 
+import hmac
 import logging
 import os
 import signal
@@ -59,13 +62,14 @@ def _rss_mb() -> float:
 # ---------------------------------------------------------------------------
 
 class TranscriberServer:
-    def __init__(self, api_key: str, model: WhisperModel, beam_size: int, vad_filter: bool, port: int) -> None:
+    def __init__(self, api_key: str, model: WhisperModel, beam_size: int, vad_filter: bool, port: int, max_upload_mb: int = 100) -> None:
         self.api_key    = api_key
         self.model      = model
         self.beam_size  = beam_size
         self.vad_filter = vad_filter
         self.port       = port
         self.app        = Flask(__name__)
+        self.app.config["MAX_CONTENT_LENGTH"] = max_upload_mb * 1024 * 1024
         self._model_lock = threading.Lock()
 
         self.app.add_url_rule(
@@ -85,7 +89,9 @@ class TranscriberServer:
         signal.signal(signal.SIGTERM, self._handle_shutdown)
         signal.signal(signal.SIGINT,  self._handle_shutdown)
         log.info("Listening on port %d", self.port)
-        self.app.run(host="0.0.0.0", port=self.port, threaded=True)
+        from waitress import serve
+        # Bind address is configurable; default stays 0.0.0.0 for container use.
+        serve(self.app, host=os.environ.get("HOST", "0.0.0.0"), port=self.port, threads=4)
 
     def _handle_shutdown(self, signum, frame) -> None:
         log.info("Received signal %s, shutting down.", signal.Signals(signum).name)
@@ -106,7 +112,9 @@ class TranscriberServer:
 
     def _authorized(self) -> bool:
         auth = request.headers.get("Authorization", "")
-        return auth.startswith("Bearer ") and auth[7:] == self.api_key
+        return auth.startswith("Bearer ") and hmac.compare_digest(
+            auth[7:].encode(), self.api_key.encode()
+        )
 
     def _vad(self) -> tuple:
         if not self._authorized():
@@ -270,7 +278,7 @@ if __name__ == "__main__":
         log.info("VAD filter: %s", "enabled" if vad_filter else "disabled")
         model = load_model(model_name, device, compute_type)
 
-        TranscriberServer(api_key, model, beam_size, vad_filter, port).run()
+        TranscriberServer(api_key, model, beam_size, vad_filter, port, int(os.environ.get("MAX_UPLOAD_MB", "100"))).run()
 
     except RuntimeError as e:
         print(f"\nConfiguration error: {e}", file=sys.stderr)

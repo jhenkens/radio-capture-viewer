@@ -1,5 +1,5 @@
 import type WebSocket from "ws";
-import { eq, and, lt, gte, inArray, like, or, desc } from "drizzle-orm";
+import { eq, and, lt, gte, inArray, sql, or, desc } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import type { DB } from "../db/index.js";
 import type { NotificationService, TransmissionAvailableEvent } from "../notifications/NotificationService.js";
@@ -82,7 +82,7 @@ export class ConnectionManager {
     msg: { query_id: string; system_id: string; channel_ids?: string[]; search?: string; after?: number; before?: number; cursor?: number; limit?: number }
   ): Promise<void> {
     const { query_id, system_id, channel_ids, search, after, before, cursor, limit: lim } = msg;
-    const limit = Math.min(lim ?? 50, 200);
+    const limit = Math.max(1, Math.min(Number.isFinite(lim) ? Math.floor(lim!) : 50, 200));
 
     const conditions = [
       eq(schema.transmissions.system_id, system_id),
@@ -95,7 +95,7 @@ export class ConnectionManager {
     }
     if (search) {
       conditions.push(or(
-        like(schema.transmissions.transcript, `%${search}%`),
+        sql`${schema.transmissions.transcript} LIKE ${`%${search.replace(/[\\%_]/g, "\\$&")}%`} ESCAPE '\\'`,
         eq(schema.transmissions.id, search)
       )!);
     }

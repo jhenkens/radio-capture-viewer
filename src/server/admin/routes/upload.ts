@@ -260,6 +260,9 @@ export async function uploadRoutes(
         for await (const chunk of data.file) {
           chunks.push(chunk);
         }
+        if (data.file.truncated) {
+          return reply.status(413).send({ error: "File exceeds maximum upload size" });
+        }
         fileBuffer = Buffer.concat(chunks);
         filename = data.filename;
         content_type = data.mimetype;
@@ -294,6 +297,9 @@ export async function uploadRoutes(
         }
 
         fileBuffer = Buffer.from(body.file_data, "base64");
+        if (fileBuffer.length > getConfig().limits.maxUploadBytes) {
+          return reply.status(413).send({ error: "File exceeds maximum upload size" });
+        }
         channel_name = body.channel_name;
         filename = body.filename;
         content_type = body.content_type;

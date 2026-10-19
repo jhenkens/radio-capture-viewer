@@ -6,6 +6,8 @@
  *   npx tsx src/server/scripts/seed.ts create-system --name "My Radio"
  *   npx tsx src/server/scripts/seed.ts create-channel --system-id <id> --name "Fire Dispatch"
  *   npx tsx src/server/scripts/seed.ts create-api-key --system-id <id> --name "importer"
+ *   npx tsx src/server/scripts/seed.ts list-api-keys
+ *   npx tsx src/server/scripts/seed.ts revoke-api-key --id <key-id>
  *   npx tsx src/server/scripts/seed.ts list
  */
 
@@ -103,6 +105,26 @@ async function createApiKey(systemId: string, keyName: string): Promise<void> {
   console.log(`Created API key: ${keyName}`);
   console.log(`  Key: ${rawKey}`);
   console.log(`  (Store this key securely — it will not be shown again)`);
+}
+
+async function listApiKeys(): Promise<void> {
+  const db = getDb();
+  const rows = await db.select().from(schema.api_keys);
+  console.log(`\nAPI keys (${rows.length}):`);
+  for (const k of rows) {
+    const used = k.last_used_at ? new Date(k.last_used_at).toISOString() : "never";
+    console.log(`  [${k.id}] ${k.name} (system ${k.system_id}) created ${new Date(k.created_at).toISOString()} last used ${used}`);
+  }
+}
+
+async function revokeApiKey(id: string): Promise<void> {
+  const db = getDb();
+  const deleted = await db.delete(schema.api_keys).where(eq(schema.api_keys.id, id)).returning();
+  if (!deleted.length) {
+    console.error(`API key not found: ${id}`);
+    process.exit(1);
+  }
+  console.log(`Revoked API key: ${deleted[0]!.name} (${id})`);
 }
 
 async function backfillAnalyzeTasks(): Promise<void> {
@@ -587,6 +609,18 @@ async function main(): Promise<void> {
         process.exit(1);
       }
       await createApiKey(flags["systemId"]!, flags["name"]!);
+      break;
+
+    case "list-api-keys":
+      await listApiKeys();
+      break;
+
+    case "revoke-api-key":
+      if (!flags["id"]) {
+        console.error("Usage: seed revoke-api-key --id <key-id>   (see list-api-keys)");
+        process.exit(1);
+      }
+      await revokeApiKey(flags["id"]!);
       break;
 
     case "list":

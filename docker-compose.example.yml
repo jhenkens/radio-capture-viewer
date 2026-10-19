@@ -12,6 +12,11 @@ services:
       - STORAGE_PROVIDER=local
       - STORAGE_LOCAL_BASE_PATH=/app/data/audio
       - CACHE_BASE_PATH=/app/data/cache
+      # Password (HTTP Basic, any username) for the viewer, audio and WebSocket. Strongly
+      # recommended unless the port is only reachable on a trusted network.
+      # Generate: openssl rand -hex 24
+      - FRONTEND_PASSWORD=${FRONTEND_PASSWORD:?set FRONTEND_PASSWORD in .env}
+      # - MAX_UPLOAD_BYTES=104857600
       # Uncomment for S3/R2:
       # - STORAGE_PROVIDER=s3
       # - STORAGE_S3_ENDPOINT=https://...
@@ -22,7 +27,7 @@ services:
       # Whisper transcription (uncomment to enable):
       # - WHISPER_ENABLED=true
       # - WHISPER_BASE_URL=https://api.openai.com
-      # - WHISPER_API_KEY=sk-...
+      # - WHISPER_API_KEY=${OPENAI_API_KEY}
       # - WHISPER_MODEL=gpt-4o-transcribe
       # - WHISPER_PROMPT=...
       # Allow the importer to trigger creation of new channels by name:
@@ -31,6 +36,9 @@ services:
 
   importer:
     build: ./importer
+    # Must be able to read (and write, if delete_after_upload or the state file lives there)
+    # the recordings dir. Set IMPORTER_UID/GID in .env to the owner of that directory.
+    user: "${IMPORTER_UID:-10001}:${IMPORTER_GID:-10001}"
     volumes:
       # Optional: mount a custom config file (otherwise the baked-in defaults + env vars are used)
       # - ./importer/config.yaml:/config/config.yaml:ro
@@ -40,7 +48,7 @@ services:
       - /etc/rtlsdr-airband.conf:/etc/rtlsdr-airband.conf:ro
     environment:
       - RADIO_CAPTURE_IMPORTER_SERVER_URL=http://app:3000
-      - RADIO_CAPTURE_IMPORTER_API_KEY=rcv_your_key_here
+      - RADIO_CAPTURE_IMPORTER_API_KEY=${IMPORTER_API_KEY:?create one with: docker exec app rcv-seed create-api-key ...}
       - RADIO_CAPTURE_IMPORTER_RTL_CONFIG=/etc/rtlsdr-airband.conf
     restart: unless-stopped
     depends_on:
@@ -50,7 +58,7 @@ services:
   # transcriber:
   #   image: ghcr.io/jhenkens/radio-capture-viewer:transcriber-latest
   #   environment:
-  #     - API_KEY=change-me
+  #     - API_KEY=${TRANSCRIBER_API_KEY:?generate with: openssl rand -hex 32}
   #     - WHISPER_MODEL=small.en
   #     # - DEVICE=cpu
   #     # - COMPUTE_TYPE=int8
@@ -59,7 +67,7 @@ services:
   #   restart: unless-stopped
   # Then point the app at it:
   #   WHISPER_BASE_URL=http://transcriber:8000
-  #   WHISPER_API_KEY=change-me
+  #   WHISPER_API_KEY=${TRANSCRIBER_API_KEY:?generate with: openssl rand -hex 32}
 
   # Optional: speaches.ai sidecar for local transcription
   # speaches:

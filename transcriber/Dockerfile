@@ -13,6 +13,11 @@ RUN pip install -r requirements.txt
 
 COPY app.py vad.py ./
 
+# Run unprivileged; the model cache volume must be writable by this user.
+RUN useradd --system --uid 10001 --home-dir /app app \
+    && mkdir -p /app/hf-cache && chown -R app:app /app/hf-cache
+USER app
+
 # Mount a volume here to persist downloaded models across container restarts.
 # e.g. -v hf-cache:/app/hf-cache
 VOLUME /app/hf-cache

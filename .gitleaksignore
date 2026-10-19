@@ -1,0 +1,3 @@
+# Known finding, accepted so CI can gate *new* leaks. The key MUST be revoked/rotated;
+# until history is rewritten this fingerprint would otherwise fail every run.
+e838dc28b47a69e3e4be621f661ef8620169494b:importer/config.yaml:generic-api-key:4

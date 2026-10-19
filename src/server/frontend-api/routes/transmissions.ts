@@ -51,9 +51,18 @@ export async function transmissionsRoutes(
     let partial = false;
     if (rangeHeader && total > 0) {
       const match = /bytes=(\d*)-(\d*)/.exec(rangeHeader);
-      if (match) {
-        start = match[1] ? parseInt(match[1], 10) : total - parseInt(match[2]!, 10);
-        end   = match[2] ? Math.min(parseInt(match[2], 10), total - 1) : total - 1;
+      if (match && (match[1] || match[2])) {
+        if (match[1]) {
+          start = parseInt(match[1], 10);
+          end   = match[2] ? Math.min(parseInt(match[2], 10), total - 1) : total - 1;
+        } else {
+          // suffix range: last N bytes
+          start = Math.max(total - parseInt(match[2]!, 10), 0);
+          end   = total - 1;
+        }
+        if (!(start <= end) || start >= total) {
+          return reply.status(416).header("Content-Range", `bytes */${total}`).send();
+        }
         partial = true;
       }
     }

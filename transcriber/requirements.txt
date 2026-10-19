@@ -4,3 +4,4 @@ psutil
 # faster-whisper allows any av>=11, but PyAV 17+ breaks its audio decoding
 # (decode_audio -> TypeError: open() got an unexpected keyword argument 'metadata_errors').
 av<17
+waitress
