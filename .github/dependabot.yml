@@ -1,26 +1,55 @@
 version: 2
+# One grouped PR per ecosystem per week, minor/patch only, and each release has to be a
+# week old before it is proposed (time for a bad release to be yanked). Major versions are
+# never proposed: upgrade those by hand. Passing PRs are merged by pr-checks.yml.
 updates:
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 7
     groups:
-      minor-and-patch:
+      npm:
         update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # Only raise a requirement's lower bound when the new release is actually needed.
   - package-ecosystem: pip
-    directory: /transcriber
+    directories: [/importer, /transcriber]
     schedule:
       interval: weekly
-  - package-ecosystem: pip
-    directory: /importer
-    schedule:
-      interval: weekly
+    cooldown:
+      default-days: 7
+    versioning-strategy: increase-if-necessary
+    groups:
+      pip:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
   - package-ecosystem: docker
     directories: [/, /importer, /transcriber]
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

@@ -6,6 +6,8 @@ on:
       - "main"
     tags:
       - "v*"
+  # Started by pr-checks.yml after it merges a Dependabot PR (GITHUB_TOKEN merges don't fire push).
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
